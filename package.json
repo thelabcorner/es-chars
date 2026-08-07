@@ -1,0 +1,40 @@
+{
+  "name": "eschars",
+  "version": "1.0.0",
+  "description": "ESCHARS - native charCodeAt/fromCharCode + bulk byte/unit operations (packed channel, base64, hex, CRC-32, FNV-1a, table translate) for Adobe ExtendScript (ES3) via a live-verified ExternalObject DLL",
+  "type": "module",
+  "main": "dist/eschars-core.esm.mjs",
+  "scripts": {
+    "build": "node eschars-build.mjs",
+    "build:native": "powershell -ExecutionPolicy Bypass -File native/build.ps1",
+    "test": "node tests/core-test.mjs && node tests/differential.mjs",
+    "typecheck": "npx tsc --noEmit -p .",
+    "live-verify": "node tests/eschars-live-verify.mjs",
+    "benchmark": "python \"C:/Program Files/Adobe/Adobe Illustrator 2026/Presets/en_US/Scripts/agent-skills/illustrator-com-automation-skill/scripts/ILLUSTRATOR_COM_TOOL.py\" eval --file probes/eschars-benchmark.jsx --launch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thelabcorner/es-chars.git"
+  },
+  "keywords": [
+    "charCodeAt",
+    "fromCharCode",
+    "base64",
+    "hex",
+    "crc32",
+    "fnv1a",
+    "externalobject",
+    "extendscript",
+    "es3",
+    "polyfill",
+    "illustrator"
+  ]
+}

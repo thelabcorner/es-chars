@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.idea/
+*.log
+__pycache__/
+*.pyc
+*.obj
+native/bin/
+tests/.eschars-test.bundle.mjs
+tests/.eschars-live-verify.bundle.mjs
