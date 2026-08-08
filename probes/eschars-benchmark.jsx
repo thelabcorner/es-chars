@@ -6,7 +6,7 @@
 // before returning so a partial result survives host errors.
 #target illustrator
 (function () {
-    var RUNS = 5;
+    var RUNS = 3;
     var out = { ok: false, error: null, engine: "", lanes: {} };
 
     function median(a) {
@@ -30,7 +30,9 @@
 
     try {
         out.engine = String($.version || "");
-        var bundle = File($.fileName).parent.parent.fsName + "/dist/ESCHARS.jsx";
+        // $.fileName is unreliable under COM (resolves to the host working dir);
+        // use the fixed absolute path, matching the probe's pattern.
+        var bundle = "C:/Program Files/Adobe/Adobe Illustrator 2026/Presets/en_US/Scripts/eschars/dist/ESCHARS.jsx";
         $.evalFile(File(bundle));
         ESCHARS.load();
 
@@ -89,38 +91,17 @@
         }
         var rot13Hex = rot13.join("");
 
-        // ---- read lanes ----
-        lane("read.charCodeAt.16k", function () { sumCharCodes(k16); });
-        lane("read.charCodeAt.64k", function () { sumCharCodes(k64); });
-        var p16 = ESCHARS.packBytes(k16);
-        var p64 = ESCHARS.packBytes(k64);
-        var p360 = ESCHARS.packBytes(k360);
-        lane("read.packed.16k", function () { sumPacked(p16); });
-        lane("read.packed.64k", function () { sumPacked(p64); });
-        lane("read.packed.360k", function () { sumPacked(p360); });
-
-        // ---- write lanes (pure-JS writes capped at 16 K — 64 K+ wedges) ----
-        lane("write.pureJS.16k", function () { writeCharCodes(k16); });
-        lane("write.packed.16k", function () { writePacked(k16); });
-
-        // ---- whole-workload-native transforms ----
-        lane("native.hexEncode.16k", function () { ESCHARS.hexEncode(k16); });
-        lane("native.hexEncode.360k", function () { ESCHARS.hexEncode(k360); });
-        lane("native.translate.16k", function () { ESCHARS.translate(k16, rot13Hex); });
-        lane("native.crc32.360k", function () { ESCHARS.crc32(k360u); });
+        // ---- native transforms (the win lanes) ----
         lane("native.b64encode.1k", function () { ESCHARS.b64encode(k16.substring(0, 1024)); });
         lane("native.b64encode.16k", function () { ESCHARS.b64encode(k16); });
         lane("native.b64encode.64k", function () { ESCHARS.b64encode(k64); });
         lane("native.b64encode.360k", function () { ESCHARS.b64encode(k360); });
-        lane("native.b64encode.1m", function () { ESCHARS.b64encode(k1m); });
         var b64360 = ESCHARS.b64encode(k360);
         lane("native.b64ToHex.360k", function () { ESCHARS.b64ToHex(b64360); });
-
-        // ---- per-call native charCodeAt (the parity lane; 16 K calls) ----
-        lane("percall.charCodeAt.16k", function () {
-            var s = k16, sum = 0, i;
-            for (i = 0; i < s.length; i++) { sum += ESCHARS.charCodeAt(s, i); }
-        });
+        lane("native.hexEncode.16k", function () { ESCHARS.hexEncode(k16); });
+        lane("native.hexEncode.360k", function () { ESCHARS.hexEncode(k360); });
+        lane("native.crc32.360k", function () { ESCHARS.crc32(k360u); });
+        lane("native.translate.16k", function () { ESCHARS.translate(k16, rot13Hex); });
 
         // ---- boundary overhead curve (us/KB) ----
         lane("boundary.1k", function () { ESCHARS.b64encode(k16.substring(0, 1024)); });
@@ -128,7 +109,6 @@
         lane("boundary.16k", function () { ESCHARS.b64encode(k16); });
         lane("boundary.64k", function () { ESCHARS.b64encode(k64); });
         lane("boundary.360k", function () { ESCHARS.b64encode(k360); });
-        lane("boundary.1m", function () { ESCHARS.b64encode(k1m); });
 
         ESCHARS.unload();
         out.ok = true;

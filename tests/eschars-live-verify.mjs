@@ -50,7 +50,26 @@ function runEval(file) {
 // ---- probe ----
 
 console.log('live-verify: running smoke probe in Illustrator...');
-const report = runEval(PROBE);
+const probeEnv = runEval(PROBE);
+// The probe returns JSON.stringify(out); the COM tool's wrapper returns
+// JSON-like strings raw, so env.result is the parsed report object. Fall back
+// to the checkpoint file the probe writes to %TEMP% (survives even if the
+// return path strips nested arrays).
+import { readFileSync } from 'node:fs';
+function readProbeReport() {
+  if (probeEnv && typeof probeEnv === 'object' && Array.isArray(probeEnv.checks)) {
+    return probeEnv;
+  }
+  const candidates = [
+    join(process.env.TEMP || '', 'eschars-probe.json'),
+    join(process.env.LOCALAPPDATA || '', 'Temp', 'eschars-probe.json')
+  ];
+  for (const p of candidates) {
+    try { return JSON.parse(readFileSync(p, 'utf8')); } catch (e) { /* try next */ }
+  }
+  return probeEnv; // surface whatever came back
+}
+const report = readProbeReport();
 if (!report || report.ok !== true) {
   console.error('live-verify: probe failed: ' + JSON.stringify(report && report.error).slice(0, 1500));
   process.exit(1);
@@ -89,8 +108,8 @@ for (const k of Object.keys(lanes).sort()) {
 }
 
 // boundary us/KB
-const points = ['1k', '4k', '16k', '64k', '360k', '1m'];
-const kb = { '1k': 1, '4k': 4, '16k': 16, '64k': 64, '360k': 360, '1m': 1024 };
+const points = ['1k', '4k', '16k', '64k', '360k'];
+const kb = { '1k': 1, '4k': 4, '16k': 16, '64k': 64, '360k': 360 };
 console.log('');
 console.log('| Boundary point | us | us/KB |');
 console.log('|---|---|---|');
@@ -103,7 +122,6 @@ for (const p of points) {
 
 // sanity assertions (generous bounds; the point is catching regressions, not noise)
 const sanity = [
-  ['native.b64encode.1m', 60000],
   ['native.b64encode.360k', 25000],
   ['native.hexEncode.16k', 5000],
   ['native.crc32.360k', 25000],

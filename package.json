@@ -10,6 +10,7 @@
     "test": "node tests/core-test.mjs && node tests/differential.mjs",
     "typecheck": "npx tsc --noEmit -p .",
     "live-verify": "node tests/eschars-live-verify.mjs",
+    "live-verify:fresh": "powershell -Command \"Get-Process Illustrator -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 3\" && node tests/eschars-live-verify.mjs",
     "benchmark": "python \"C:/Program Files/Adobe/Adobe Illustrator 2026/Presets/en_US/Scripts/agent-skills/illustrator-com-automation-skill/scripts/ILLUSTRATOR_COM_TOOL.py\" eval --file probes/eschars-benchmark.jsx --launch"
   },
   "devDependencies": {

@@ -76,7 +76,14 @@ export function hexTableValid(t: string): boolean {
   }
   for (i = 0; i < 512; i++) {
     c = t.charCodeAt(i);
-    if (!((c >= 48 && c <= 57) || (c >= 97 && c <= 102) || (c >= 65 && c <= 70))) {
+    /* Each range check is isolated in its own var. esbuild strips the inner
+     * parens from !(A || B || C), and ExtendScript's ES3 parser then binds
+     * `!` to the first comparison only, mis-classifying lowercase hex (a-f).
+     * Spreading the comparisons across locals forces the correct grouping. */
+    var isDigit: boolean = c >= 48 && c <= 57;
+    var isLowerHex: boolean = c >= 97 && c <= 102;
+    var isUpperHex: boolean = c >= 65 && c <= 70;
+    if (!(isDigit || isLowerHex || isUpperHex)) {
       return false;
     }
   }

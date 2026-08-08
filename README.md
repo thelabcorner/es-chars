@@ -6,16 +6,43 @@
 
 ### The drop-in native speed library for byte-unit work in Adobe Illustrator, InDesign, Photoshop & any ExtendScript host
 
-[![Engine: ES3](https://img.shields.io/badge/ExtendScript-ES3-green)](#compatibility)
-[![Native: x64 Windows](https://img.shields.io/badge/native-x64%20Windows-blue)](#build)
+[![Differential: Node reference](https://img.shields.io/badge/differential-vs%20Node%20reference%2073%2F73-purple)](#validation)
+[![Native: x64 Windows](https://img.shields.io/badge/native-x64%20Windows-blue)](#development)
 [![Boundary: ~7 us/KB](https://img.shields.io/badge/boundary~%7C%7C~7%20us%2FKB-orange)](#whole-workload-native-transforms)
+[![Adobe: Creative Suite](https://img.shields.io/badge/Adobe%20-Creative%20Suite-red?logo=adobe&logoColor=white)](https://extendscript.docsforadobe.dev/)
+[![Engine: ES3](https://img.shields.io/badge/ExtendScript-ES3-green)](#compatibility)
+[![Size](https://img.shields.io/badge/wrapper-~8%20KB-orange)](#which-build-should-i-use)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL%203.0--or--later-blue)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 </div>
 
 ---
 
-> **From the same team: [ESON](https://github.com/thelabcorner/eson) — strict JSON for ExtendScript, [ESB64](https://github.com/thelabcorner/es-b64) — WHATWG base64 + UTF-8, [ArcFit.dev](https://arcfit.dev) — deterministic arc warp for Illustrator.**
+> **From the same team: [ESON](https://github.com/thelabcorner/eson) — strict JSON for ExtendScript, [ESB64](https://github.com/thelabcorner/es-b64) — base64/UTF-8, ESARR — ES5 array methods, ESSTR — string trim, [ESPACK](https://github.com/thelabcorner/espack) — self-extracting ExternalObject bundles, ESOBF — obfuscation, and [ArcFit.dev](https://arcfit.dev) — deterministic arc warp for Illustrator.**
+
+---
+
+## Table of Contents
+
+- [Why ESCHARS?](#why-eschars)
+- [Features](#features)
+- [Which build should I use?](#which-build-should-i-use)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [API](#api)
+- [Validation](#validation)
+- [Performance](#performance)
+  - [Whole-workload-native transforms](#whole-workload-native-transforms)
+- [Security Model](#security-model)
+- [Compatibility](#compatibility)
+- [Engine quirks that shaped the design](#engine-quirks-that-shaped-the-design)
+- [Development](#development)
+  - [Native build details](#native-build-details)
+- [Repository layout](#repository-layout)
+- [Research corrections](#research-corrections)
+- [Known limitations](#known-limitations)
+- [Credits](#credits)
+- [License](#license)
 
 ---
 
@@ -25,39 +52,7 @@
 
 The library is **native-only with a hard failure if the DLL is missing** — there are deliberately **no pure-JS fallbacks**, because the wedge makes large-payload fallback impossible (a "fallback" for >= 128 K would be a trap). For small payloads the engine primitive is already ~1 µs/call; the wins are the batch/packed channel and the whole-workload-native transforms.
 
-## Performance (live, Illustrator 30.6.0, median µs)
-
-| Lane | 16 K units | 64 K | 360 K | 1 M |
-|---|---|---|---|---|
-| Pure-JS `charCodeAt` sum loop | 11,930 | 47,703 | **wedges >= 128 K (restart)** | — |
-| `split('')` + `charCodeAt(0)` | 21,267 | — | — | — |
-| **`packBytes` + N/2 `charCodeAt` (bulk read)** | **6,820 (1.75x)** | **27,099 (1.76x)** | **150,858 — runs fine** | — |
-| Pure-JS write (`fromCharCode` + push/join) | 437,861 | — | — | — |
-| **Packed write (N/2 `fromCharCode` + `unpackBytes`)** | **117,386 (3.7x)** | — | — | — |
-| Per-call native `charCodeAt` (parity lane) | ~16,000 | — | — | — |
-
-**The bulk winner is the packed 2-bytes-per-char channel** (`packBytes`/`unpackBytes`): consistent ~1.75x on per-unit reads, ~3.7x on per-unit writes, and the only non-wedging per-unit option at 360 K. Caveat: packing is byte-oriented (units 0–255); pairs whose second byte would be 0xD8–0xDF hit the UTF-8 surrogate window — guaranteed safe for ASCII/Latin-1 inputs. Full 16-bit units stay 1:1 (chars are 16-bit).
-
-### Whole-workload-native transforms
-
-When the transform itself can move native, per-unit JSX disappears entirely — the biggest wins.
-
-| Lane | Native | Pure JSX | Speedup |
-|---|---|---|---|
-| `hexEncode` 16 K | 136 µs | 1,621,941 µs (1.6 s!) | **11,900x** |
-| `translate` rot13 16 K | 92 µs | 442,478 µs | **4,800x** |
-| `hexEncode` 360 K | 3,346 µs | wedges >= 128 K | — |
-| `translate` rot13 360 K | 2,234 µs | — | — |
-| `crc32` 360 K | 1,794 µs | — | — |
-| `b64ToHex` (chained, 1 call) 360 K | 6,241 µs | — | — |
-| `b64encode` 1 K / 16 K / 64 K / 360 K / 1 M | 23 / 105 / 393 / 2,382 / 7,562 µs | — | — |
-
-**Boundary overhead is ~7 µs/KB and nearly perfectly linear** (5-point curve, 1 K → 1 M) — the string channel is not the bottleneck; MB-scale payloads are safe (1 MB base64 in 7.6 ms). The pure-JS per-unit transform pattern is the engine's pathological case: 1.6 s at just 16 K, wedge at >= 128 K — the native versions run 4,800–11,900x faster *and* remove the wedge entirely.
-
-**Channel rules (measured):**
-- **NUL truncates**: the string channel is C-null-terminated — payloads containing U+0000 are cut at the first NUL. Keep byte payloads NUL-free or use the staged/length protocol (see "Follow-ups").
-- **Surrogate window**: packed values 0xD800–0xDFFF cannot round-trip (UTF-8 cannot encode lone surrogates). ASCII/Latin-1 data is safe; for arbitrary byte tables use the **hex transport** (512 hex chars for a 256-byte table — `translate` takes exactly this).
-- **Pipeline in one call**: `b64ToHex` does decode+encode in one boundary crossing (6.2 ms vs two calls ~8.7 ms at 360 K); chain transforms native-side when the pipeline is fixed.
+---
 
 ## Features
 
@@ -69,7 +64,9 @@ When the transform itself can move native, per-unit JSX disappears entirely — 
 - **Live probes**: smoke + microbenchmark run inside the real engine via COM (`probes/`).
 - **No runtime dependencies**: the production bundle is one file.
 
-## Which build should you use?
+---
+
+## Which build should I use?
 
 | | **JSX bundle** | **DLL** |
 |---|---|---|
@@ -79,6 +76,41 @@ When the transform itself can move native, per-unit JSX disappears entirely — 
 | Required by | Your `.jsx` scripts | Resolved by the wrapper at runtime |
 
 The DLL must be loadable from the host (placed beside the script, on `ExternalObject.searchFolders`, or loaded by absolute path — the wrapper tries all of these). The JSX bundle `evalFile`s the wrapper and calls `ESCHARS.load()`.
+
+---
+
+## Installation
+
+```jsx
+#target illustrator
+$.evalFile(File("C:/path/to/eschars/dist/ESCHARS.jsx"));
+ESCHARS.load();   // cached, idempotent — throws if the DLL is missing (native-only)
+```
+
+The DLL must be loadable from the host (placed beside the script, on `ExternalObject.searchFolders`, or loaded by absolute path — the wrapper tries all of these).
+
+---
+
+## Quick Start
+
+```jsx
+// bulk read: N/2 charCodeAt + arithmetic instead of N charCodeAt
+var s = "...";
+var p = ESCHARS.packBytes(s);
+var sum = 0, i, c;
+for (i = 0; i < p.length; i++) {
+    c = p.charCodeAt(i);
+    sum += (c & 255) + (c >> 8);
+}
+
+// native transforms
+var b64 = ESCHARS.b64encode(s);
+var hex = ESCHARS.hexEncode(s);
+var crc = ESCHARS.crc32(s);
+ESCHARS.unload();
+```
+
+---
 
 ## API
 
@@ -123,33 +155,105 @@ Methods throw `Error` with `.number` set (ExtendScript convention). Codes:
 
 Negative codes are **fatal and uncatchable** — never produced by the DLL.
 
-## Quickstart
+---
 
-```jsx
-#target illustrator
-(function () {
-    // eval the bundle (adjust path to your layout)
-    $.evalFile(File("C:/path/to/eschars/dist/ESCHARS.jsx"));
-    ESCHARS.load();
+## Validation
 
-    // bulk read: N/2 charCodeAt + arithmetic instead of N charCodeAt
-    var s = "...";
-    var p = ESCHARS.packBytes(s);
-    var sum = 0, i, c;
-    for (i = 0; i < p.length; i++) {
-        c = p.charCodeAt(i);
-        sum += (c & 255) + (c >> 8);
-    }
+| Check | Command | Result |
+|---|---|---|
+| charCodeAt ~0.95 µs/unit | Live median, 16 K loop, 30.6.0 | Verified |
+| Pure-JS wedge >= 128 K | 2 reproductions, 64 K ok / 128 K hang, restart each | Verified |
+| Native hex 11,900x / transform 4,800x | Live medians + byte-exact correctness | Verified |
+| Boundary ~7 µs/KB linear to 1 M | 5-point curve, medians | Verified |
+| packBytes/unpackBytes 1.75x/3.7x | Live medians 16 K/64 K + round-trip equality | Verified |
+| FNV-1a("abc") = 0x1A47E90B | BigInt-exact vs FNV spec (note: the ArcFitEso prototype README's 0x1A47A1CB claim was wrong — algorithm matches the spec and the `"a"`=0xE40C292C / `"foobar"`=0xBF9CF968 vectors) | Verified |
+| NUL truncation / surrogate window | Live failures, then hex-table fix | Verified |
+| Node differential corpus (49 vectors + 360 K / 1 M lanes) | `npm test` | 73/73 |
+| TypeScript strict | `npm run typecheck` | clean |
+| Live engine smoke + benchmark | `npm run live-verify` | Verified (Illustrator 30.6.0) |
+| Other hosts (AE/Premiere/PS) | — | **Unverified** — ThioUtils precedent suggests the direct interface works; not tested here |
+| Multi-MB (> 1 M) direct strings | — | **Extrapolated** — linear from 1 K–1 M curve; 10 M stalled an older POC — stay cautious |
 
-    // native transforms
-    var b64 = ESCHARS.b64encode(s);
-    var hex = ESCHARS.hexEncode(s);
-    var crc = ESCHARS.crc32(s);
-    ESCHARS.unload();
-}());
-```
+The differential oracle is the Node reference implementations in `tests/refs.mjs`, run against the native `ESChars-cli.exe` (which `#include`s the exact DLL source) — byte-exact, no Illustrator required. Live probes re-run smoke + microbenchmark inside the real engine via COM.
 
-## Build
+---
+
+## Performance
+
+Live, Illustrator 30.6.0, median µs (COM `DoJavaScript`, `$.hiresTimer` medians of 3–7 runs).
+
+| Lane | 16 K units | 64 K | 360 K | 1 M |
+|---|---|---|---|---|
+| Pure-JS `charCodeAt` sum loop | 11,930 | 47,703 | **wedges >= 128 K (restart)** | — |
+| `split('')` + `charCodeAt(0)` | 21,267 | — | — | — |
+| **`packBytes` + N/2 `charCodeAt` (bulk read)** | **6,820 (1.75x)** | **27,099 (1.76x)** | **150,858 — runs fine** | — |
+| Pure-JS write (`fromCharCode` + push/join) | 437,861 | — | — | — |
+| **Packed write (N/2 `fromCharCode` + `unpackBytes`)** | **117,386 (3.7x)** | — | — | — |
+| Per-call native `charCodeAt` (parity lane) | ~16,000 | — | — | — |
+
+**The bulk winner is the packed 2-bytes-per-char channel** (`packBytes`/`unpackBytes`): consistent ~1.75x on per-unit reads, ~3.7x on per-unit writes, and the only non-wedging per-unit option at 360 K. Caveat: packing is byte-oriented (units 0–255); pairs whose second byte would be 0xD8–0xDF hit the UTF-8 surrogate window — guaranteed safe for ASCII/Latin-1 inputs. Full 16-bit units stay 1:1 (chars are 16-bit).
+
+### Whole-workload-native transforms
+
+When the transform itself can move native, per-unit JSX disappears entirely — the biggest wins.
+
+| Lane | Native | Pure JSX | Speedup |
+|---|---|---|---|
+| `hexEncode` 16 K | 136 µs | 1,621,941 µs (1.6 s!) | **11,900x** |
+| `translate` rot13 16 K | 92 µs | 442,478 µs | **4,800x** |
+| `hexEncode` 360 K | 3,346 µs | wedges >= 128 K | — |
+| `translate` rot13 360 K | 2,234 µs | — | — |
+| `crc32` 360 K | 1,794 µs | — | — |
+| `b64ToHex` (chained, 1 call) 360 K | 6,241 µs | — | — |
+| `b64encode` 1 K / 16 K / 64 K / 360 K / 1 M | 23 / 105 / 393 / 2,382 / 7,562 µs | — | — |
+
+**Boundary overhead is ~7 µs/KB and nearly perfectly linear** (5-point curve, 1 K → 1 M) — the string channel is not the bottleneck; MB-scale payloads are safe (1 MB base64 in 7.6 ms). The pure-JS per-unit transform pattern is the engine's pathological case: 1.6 s at just 16 K, wedge at >= 128 K — the native versions run 4,800–11,900x faster *and* remove the wedge entirely.
+
+**Channel rules (measured):**
+- **NUL truncates**: the string channel is C-null-terminated — payloads containing U+0000 are cut at the first NUL. Keep byte payloads NUL-free or use the staged/length protocol (see "Known limitations").
+- **Surrogate window**: packed values 0xD800–0xDFFF cannot round-trip (UTF-8 cannot encode lone surrogates). ASCII/Latin-1 data is safe; for arbitrary byte tables use the **hex transport** (512 hex chars for a 256-byte table — `translate` takes exactly this).
+- **Pipeline in one call**: `b64ToHex` does decode+encode in one boundary crossing (6.2 ms vs two calls ~8.7 ms at 360 K); chain transforms native-side when the pipeline is fixed.
+
+---
+
+## Security Model
+
+ESCHARS loads and executes a native DLL (`ESChars.dll`) via `ExternalObject` — there is **no pure-JS fallback**, by design: a "fallback" for payloads ≥ 128 K would wedge the engine, so the library fails hard rather than failing silently. The trust surface is bounded:
+
+- The DLL is loaded from the **local filesystem only** — beside the script, on `ExternalObject.searchFolders`, or by absolute path; never fetched remotely.
+- Every public method is **binding-verified at `ESCHARS.load()` time** (per-DLL-build binding failures throw `ERR.BINDING` with a per-method report — a missing or partial DLL never silently half-works).
+- Errors are **typed and catchable**: `Error` with `.number` (codes `20`, `1000`, `10001`–`10003`). Negative codes are fatal and uncatchable in this engine and are never produced by the DLL.
+- The string channel truncates at NUL and cannot transport lone surrogates; the library degrades via documented rules (hex transport, staged/length protocol) rather than corrupting data.
+
+---
+
+## Compatibility
+
+| Target | Status |
+|---|---|
+| ExtendScript ES3 (SpiderMonkey 2014) — wrapper is ES3-clean (no `let`/`const`/arrows/`Promise`/`Map`); esbuild targets ES5 with an injected shim for `Object.defineProperty` and `Function.prototype.bind` | Bundled |
+| Windows x64 (PE64 DLL; no macOS scope) | Native layer; the same DLL should work in Premiere/After Effects (ThioUtils precedent) but that is **unverified** here |
+| Illustrator 2026 (30.6.0) | Developed and tested; re-probe per host version |
+| Node.js (test harnesses) | Differential tests run without Illustrator (ESChars-cli.exe vs reference implementations) |
+
+---
+
+## Engine quirks that shaped the design
+
+All measured live on Illustrator 30.6.0 / ExtendScript 4.5.6.
+
+- **Per-unit string transforms wedge at >= 128 K input.** The `charCodeAt` + `push`/`join`/`fromCharCode` pattern hangs the engine at 128 K (reproduced twice; 64 K completes; restart required). There is no pure-JS large-payload lane — hence the native-only design.
+- **`charCodeAt` costs ~0.95 µs/unit.** The per-call native lane is a parity path, not a speed win; the wins are the batch/packed channel and whole-workload-native transforms.
+- **The ExternalObject string channel is NUL-terminated.** Payloads containing U+0000 are cut at the first NUL; keep byte payloads NUL-free or use the staged/length protocol.
+- **Packed values 0xD800–0xDFFF cannot cross the UTF-8 boundary** (UTF-8 cannot encode lone surrogates). ASCII/Latin-1 data is safe; arbitrary byte tables travel as hex (512 hex chars per 256-byte table — `translate` takes exactly this).
+- **`ESInitialize` bindings can fail per-DLL-build.** Some signature entries may bind while others throw `"is not a function"` / `"Error #"` — the pattern is per-DLL-build, stable across rebuilds. `ESCHARS.load()` verifies all public methods after load (see [Development](#native-build-details)).
+- **A loaded DLL stays locked until the host exits** (LNK1104 on rebuild) — iterate with numbered DLL file names.
+- **Negative error codes are fatal and uncatchable.** The catchable contract is codes `20` / `1000` / `10001`–`10003`; the DLL never emits negative codes.
+- **esbuild's ES5 pass can strip corrective parentheses the ES3 parser needs** — the `hexTableValid` compound condition mis-classified lowercase hex until each range check was isolated in its own variable (see [Research corrections](#research-corrections)).
+
+---
+
+## Development
 
 ```
 npm install                          # esbuild + typescript
@@ -160,7 +264,32 @@ npm run typecheck                    # tsc --noEmit (strict)
 npm run live-verify                  # smoke + benchmark inside Illustrator via COM
 ```
 
-## File layout
+### Native build details
+
+The DLL uses the **documented Adobe `ExternalObject` direct interface** (`TaggedData` / `SoSharedLibDefs.h`), modeled on Adobe's own `AdobeXMPScript` (decompiled) and ThioJoe's ThioUtils:
+
+- `ESGetVersion` returns literal `1`; `ESFreeMem` = `free`; returned strings are malloc'd UTF-8 (freed by ExtendScript).
+- Every method is `long fn(TaggedData* argv, long argc, TaggedData* retval)`.
+- `ESInitialize` signature string: `getVersion_s,add_ff,charCodeAt_sd,fromCharCode_d,fnv1a32_s,packBytes_s,unpackBytes_s,hexEncode_s,hexDecode_s,crc32_s,translate_ss,b64ToHex_s,b64encode_s,b64decode_s,fail_u`.
+- Custom catchable errors `>= 10000`; negative codes are fatal/uncatchable — never returned.
+- Built with MSVC x64 (`/O2 /LD /SUBSYSTEM:WINDOWS`); `build.ps1` auto-discovers VS2019/VS2022 BuildTools + Windows SDK.
+
+#### Per-DLL binding caveat
+
+On a single DLL build, some `ESInitialize` signature entries may bind while others throw `"is not a function"` / `"Error #"` — the pattern is **per-DLL build** (verified stable across rebuilds, not random per session). Mitigation: `ESCHARS.load()` verifies all public methods after load and throws `ERR.BINDING` with a per-method report if any are missing. If you hit it, rebuild with a **fresh DLL file name** (the host locks loaded DLLs — `build.ps1 -Name ESChars2.dll`) and re-probe. The prototype had **zero** binding failures across 7 builds; risk is low but real.
+
+#### Numbered-build workflow
+
+```
+powershell -File native/build.ps1                # -> bin/ESChars.dll
+powershell -File native/build.ps1 -Name ESChars2.dll   # iteration while host is running
+```
+
+A loaded DLL stays locked until the host exits (`LNK1104` on rebuild). Pass `-Name ESCharsN.dll` to build an iteration without closing Illustrator. Delete numbered binaries after the experiment.
+
+---
+
+## Repository layout
 
 ```
 eschars/
@@ -192,61 +321,42 @@ eschars/
     └── 01-bulk-transform.jsx        # runnable bulk-transform example
 ```
 
-## Native build details
-
-The DLL uses the **documented Adobe `ExternalObject` direct interface** (`TaggedData` / `SoSharedLibDefs.h`), modeled on Adobe's own `AdobeXMPScript` (decompiled) and ThioJoe's ThioUtils:
-
-- `ESGetVersion` returns literal `1`; `ESFreeMem` = `free`; returned strings are malloc'd UTF-8 (freed by ExtendScript).
-- Every method is `long fn(TaggedData* argv, long argc, TaggedData* retval)`.
-- `ESInitialize` signature string: `getVersion_s,add_ff,charCodeAt_sd,fromCharCode_d,fnv1a32_s,packBytes_s,unpackBytes_s,hexEncode_s,hexDecode_s,crc32_s,translate_ss,b64ToHex_s,b64encode_s,b64decode_s,fail_u`.
-- Custom catchable errors `>= 10000`; negative codes are fatal/uncatchable — never returned.
-- Built with MSVC x64 (`/O2 /LD /SUBSYSTEM:WINDOWS`); `build.ps1` auto-discovers VS2019/VS2022 BuildTools + Windows SDK.
-
-### Per-DLL binding caveat
-
-On a single DLL build, some `ESInitialize` signature entries may bind while others throw `"is not a function"` / `"Error #"` — the pattern is **per-DLL build** (verified stable across rebuilds, not random per session). Mitigation: `ESCHARS.load()` verifies all public methods after load and throws `ERR.BINDING` with a per-method report if any are missing. If you hit it, rebuild with a **fresh DLL file name** (the host locks loaded DLLs — `build.ps1 -Name ESChars2.dll`) and re-probe. The prototype had **zero** binding failures across 7 builds; risk is low but real.
-
-### Numbered-build workflow
-
-```
-powershell -File native/build.ps1                # -> bin/ESChars.dll
-powershell -File native/build.ps1 -Name ESChars2.dll   # iteration while host is running
-```
-
-A loaded DLL stays locked until the host exits (`LNK1104` on rebuild). Pass `-Name ESCharsN.dll` to build an iteration without closing Illustrator. Delete numbered binaries after the experiment.
-
-## Validation status
-
-| Item | Status | How verified |
-|---|---|---|
-| charCodeAt ~0.95 µs/unit | Verified | Live median, 16 K loop, 30.6.0 |
-| Pure-JS wedge >= 128 K | Verified | 2 reproductions, 64 K ok / 128 K hang, restart each |
-| Native hex 11,900x / transform 4,800x | Verified | Live medians + byte-exact correctness |
-| Boundary ~7 µs/KB linear to 1 M | Verified | 5-point curve, medians |
-| packBytes/unpackBytes 1.75x/3.7x | Verified | Live medians 16 K/64 K + round-trip equality |
-| FNV-1a("abc") = 0x1A47E90B | Verified | BigInt-exact vs FNV spec (note: the ArcFitEso prototype README's 0x1A47A1CB claim was wrong — algorithm matches the spec and the `"a"`=0xE40C292C / `"foobar"`=0xBF9CF968 vectors) |
-| NUL truncation / surrogate window | Verified | Live failures, then hex-table fix |
-| Node corpus byte-exact (incl. 360 K / 1 M) | Verified | differential.mjs: 73/73 |
-| Other hosts (AE/Premiere/PS) | **Unverified** | ThioUtils precedent suggests the direct interface works; not tested here |
-| Multi-MB (> 1 M) direct strings | **Extrapolated** | Linear from 1 K–1 M curve; 10 M stalled an older POC — stay cautious |
-
-## Compatibility
-
-- **Engine**: Adobe ExtendScript ES3 (SpiderMonkey 2014). The wrapper is ES3-clean (no `let`/`const`/arrows/Promise/Map); esbuild targets ES5 with an injected shim for `Object.defineProperty` and `Function.prototype.bind`.
-- **Native**: Windows x64 only (PE64 DLL; no macOS scope). The same DLL should work in Premiere/After Effects (ThioUtils precedent) but that is **unverified** here.
-- **Illustrator**: developed and tested on Illustrator 2026 (30.6.0). Re-probe per host version.
+---
 
 ## Research corrections
 
 This library corrects one claim from its parent prototype (the ArcFitEso POC, `agent-skills/externalobject-extendscript/prototypes/arcfit-eso/`): the prototype's README listed `hash("abc")` = `440920331` = `0x1A47A1CB` as "canonical FNV-1a". The correct FNV-1a 32-bit hash of `"abc"` is **`0x1A47E90B`** (440,921,867) — verified BigInt-exact against the FNV spec algorithm (`hash = offset_basis; for each octet: hash ^= octet; hash *= FNV_prime` mod 2³²) and cross-checked against the canonical vectors FNV-1a(`"a"`) = `0xE40C292C` and FNV-1a(`"foobar"`) = `0xBF9CF968`, both of which the implementation reproduces exactly.
 
-## Follow-ups (only after the above is stable)
+### hexTableValid operator precedence (fixed)
+
+The `hexTableValid` wrapper function (validates the 512-char hex table for `translate`) originally used a single compound condition: `!((c >= 48 && c <= 57) || (c >= 97 && c <= 102) || (c >= 65 && c <= 70))`. esbuild's ES5 pass correctly removed the inner parentheses (which are redundant per JS operator precedence), producing `!(c >= 48 && c <= 57 || c >= 97 && c <= 102 || c >= 65 && c <= 70)`. ExtendScript's ES3 parser, however, binds `!` to the first comparison only when the inner parens are absent — mis-classifying lowercase hex (`a`–`f`) as invalid while accepting uppercase (`A`–`F`) and digits. The fix isolates each range check in its own local variable, forcing correct grouping regardless of parser quirks. Verified live: `translate` rot13 now passes in a fresh Illustrator session.
+
+---
+
+## Known limitations
 
 - URL-safe base64 variant
 - UTF-8 transcode helpers
 - Stage/length binary channel for NUL-containing payloads
 - Multi-host probe (Premiere / After Effects) if scope expands
 
+---
+
+## Credits
+
+ESCHARS stands on the shoulders of the ExtendScript community:
+
+- **[docsforadobe](https://github.com/docsforadobe) and the docsforadobe.dev community:** maintainers of the de-facto reference documentation for the ExtendScript runtime, including the `ExternalObject` interface this library is built on.
+- **Adobe's AdobeXMPScript** (decompiled): the canonical `ExternalObject` direct-interface precedent the DLL's ABI is modeled on; `native/SoSharedLibDefs.h` keeps Adobe's own sample-license header (vendored from `references/canonical-samples/`).
+- **ThioJoe's ThioUtils:** the precedent that the direct interface works beyond Illustrator (see Compatibility).
+- **The ArcFitEso prototype** (`agent-skills/externalobject-extendscript/prototypes/arcfit-eso/`): the parent POC this library corrects (see Research corrections).
+
+---
+
 ## License
 
 GPL-3.0-or-later. `native/SoSharedLibDefs.h` keeps its own Adobe sample-license header (vendored from `references/canonical-samples/`); the rest is GPL-3.0-or-later like the eson-family repos.
+
+---
+
+<p align="center"><small>ESCHARS: ExtendScript charCodeAt. Built for the engine, measured on the engine, native where it counts.</small></p>
