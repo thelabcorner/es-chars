@@ -118,7 +118,7 @@ The library is **native-only with a hard failure if the DLL is missing** — the
 | | **JSX bundle** | **DLL** | **ESPACK accel bundle** |
 |---|---|---|---|
 | Files | `dist/ESCHARS.jsx` | `native/bin/ESChars.dll` | `dist/ESCHARS.accel.jsx` / `.min.jsx` |
-| Size | ~11 KB (wrapper) | ~96 KB (native) | ~185 KB / ~164 KB minified |
+| Size | ~11 KB (wrapper) | ~122 KB (native) | ~221 KB / ~200 KB minified |
 | What it is | The ES3 wrapper facade + ES3 shims | The native ExternalObject DLL | Self-extracting ESPACK v0.4 bundle: loader + `ESChars.dll` payload + ESCHARS facade |
 | Required by | Your `.jsx` scripts | Resolved by the wrapper at runtime | One-file release path; no separate DLL placement |
 
@@ -135,7 +135,7 @@ The DLL must be loadable from the host (placed beside the script, on `ExternalOb
 **All production bundles ship as GitHub release assets — this repo holds sources. Grab the runnable builds from the [Releases page](https://github.com/thelabcorner/es-chars/releases).**
 
 [![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue)](https://github.com/thelabcorner/es-chars/releases/tag/v1.1.0)
-[![Released: 2026-08-11](https://img.shields.io/badge/released-2026--08--11-lightgrey)](https://github.com/thelabcorner/es-chars/releases/tag/v1.1.0)
+[![Released: 2026-08-10](https://img.shields.io/badge/released-2026--08--10-lightgrey)](https://github.com/thelabcorner/es-chars/releases/tag/v1.1.0)
 [![Downloads](https://img.shields.io/github/downloads/thelabcorner/es-chars/total?color=blueviolet)](https://github.com/thelabcorner/es-chars/releases)
 
 </div>
@@ -410,7 +410,7 @@ eschars/
 ├── eschars-build.mjs                # esbuild bundler (TS -> JSX + ESM)
 ├── README.md
 ├── native/
-│   ├── eschars.c                    # DLL source (4 ES* exports + 15 methods)
+│   ├── eschars.c                    # DLL source (4 ES* exports + 19 methods, incl. 4 trim)
 │   ├── eschars-cli.c                # console differential harness (#includes eschars.c)
 │   ├── SoSharedLibDefs.h            # canonical Adobe ABI header (keep its license notice intact)
 │   └── build.ps1                    # auto-discovers MSVC + SDK; -Name/-Cli switches
