@@ -1,10 +1,10 @@
 <div align="center">
 
-# ESCHARS: Native charCodeAt + Bulk Byte/Unit Operations for Adobe ExtendScript (ES3)
+# ESCHARS: Native Character, Byte, and Edge-String Operations for Adobe ExtendScript (ES3)
 
 ## ExtendScript charCodeAt = E.S.CHARS
 
-### The drop-in native speed library for byte-unit work in Adobe Illustrator, InDesign, Photoshop & any ExtendScript host
+### The drop-in native speed library for byte-unit work and modern trim edge scans in Adobe Illustrator, InDesign, Photoshop & any ExtendScript host
 
 [![Differential: Node reference](https://img.shields.io/badge/differential-vs%20Node%20reference%2073%2F73-purple)](#validation)
 [![Native: x64 Windows](https://img.shields.io/badge/native-x64%20Windows-blue)](#development)
@@ -43,7 +43,7 @@ String whitespace and trim methods.
 **[ESCHARS](https://github.com/thelabcorner/es-chars)**  
 Native bulk byte operations.
 
-**[ESHTTP](https://github.com/thelabcorner/es-http)**  
+**[ESHTTP](https://github.com/thelabcorner/es-http)**
 HTTP transport for ExtendScript automation.
 
 </td>
@@ -105,7 +105,7 @@ The library is **native-only with a hard failure if the DLL is missing** — the
 
 - **Per-call native `charCodeAt`/`fromCharCode`**: ~1 µs/call parity with the engine primitive — useful when you need unit access without the batch API; benchmark before trusting as a speed path (the win is the batch surface).
 - **Bulk packed channel** (`packBytes`/`unpackBytes`): 2-bytes-per-char read/write, the only non-wedging per-unit path at 360 K.
-- **Whole-workload-native transforms**: `b64encode`/`b64decode`, `hexEncode`/`hexDecode`, IEEE CRC-32, FNV-1a 32-bit, arbitrary-byte `translate` (256-byte lookup table), and the `b64ToHex` chain.
+- **Whole-workload-native transforms**: `b64encode`/`b64decode`, `hexEncode`/`hexDecode`, IEEE CRC-32, FNV-1a 32-bit, arbitrary-byte `translate` (256-byte lookup table), the `b64ToHex` chain, and modern-trim edge scans (`trimModern*`).
 - **ES3-clean wrapper**: feature-detected load-by-absolute-path with `searchFolders` prepend, per-DLL binding verification, typed error mapping (`Error #` → error codes), native-only hard failure.
 - **Node differential tests**: the native C is compiled into a console harness (`ESChars-cli.exe`) sharing the *exact* production code paths (the DLL source is `#include`d), and byte-exact differential-tested against Node reference implementations over a 49-vector corpus plus 360 K / 1 M lanes — no Illustrator required.
 - **Live probes**: smoke + microbenchmark run inside the real engine via COM (`probes/`).
@@ -134,8 +134,8 @@ The DLL must be loadable from the host (placed beside the script, on `ExternalOb
 
 **All production bundles ship as GitHub release assets — this repo holds sources. Grab the runnable builds from the [Releases page](https://github.com/thelabcorner/es-chars/releases).**
 
-[![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/thelabcorner/es-chars/releases/tag/v1.0.0)
-[![Released: 2026-08-10](https://img.shields.io/badge/released-2026--08--10-lightgrey)](https://github.com/thelabcorner/es-chars/releases/tag/v1.0.0)
+[![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue)](https://github.com/thelabcorner/es-chars/releases/tag/v1.1.0)
+[![Released: 2026-08-11](https://img.shields.io/badge/released-2026--08--11-lightgrey)](https://github.com/thelabcorner/es-chars/releases/tag/v1.1.0)
 [![Downloads](https://img.shields.io/github/downloads/thelabcorner/es-chars/total?color=blueviolet)](https://github.com/thelabcorner/es-chars/releases)
 
 </div>
@@ -148,22 +148,22 @@ The DLL must be loadable from the host (placed beside the script, on `ExternalOb
 
 | You are... | Take this release | And this asset |
 |---|---|---|
-| Dropping one file into the Scripts folder with zero install steps (self-extracting `ESChars.dll` included) | v1.0.0 | `ESCHARS.accel.min.jsx` |
-| Auditing or debugging the self-extracting bundle before minification | v1.0.0 | `ESCHARS.accel.jsx` |
-| Loading the native DLL from your own `ExternalObject` setup | v1.0.0 | `ESCHARS.jsx` + `ESChars.dll` |
+| Dropping one file into the Scripts folder with zero install steps (self-extracting `ESChars.dll` included) | v1.1.0 | `ESCHARS.accel.min.jsx` |
+| Auditing or debugging the self-extracting bundle before minification | v1.1.0 | `ESCHARS.accel.jsx` |
+| Loading the native DLL from your own `ExternalObject` setup | v1.1.0 | `ESCHARS.jsx` + `ESChars.dll` |
 | Composing several ESPACK consumers into one merged bundle | main | `npm run build:accel` → `ESCHARS.manifest.json` + `ESCHARS.facade.jsx` (composer inputs, not release assets) |
-| Running Node-side tests or reading the core facade | v1.0.0 | `eschars-core.esm.mjs` |
+| Running Node-side tests or reading the core facade | v1.1.0 | `eschars-core.esm.mjs` |
 | Building from source / reading the implementation | main | the repo |
 
 > **Rule of thumb: start with the latest stable tag.** Every release asset is
 > produced by `npm run build` + `npm run build:accel` from the exact tagged
 > commit, and no release is tagged before it passes the full gate: 49 Node
-> core assertions, 73/73 differential checks (byte-exact vs Node reference,
-> incl. 360 K / 1 M lanes), strict typecheck, and the live smoke + benchmark
+> core assertions, 73/73 byte-transform differential checks (incl. 360 K / 1 M
+> lanes), 1380 trim differential checks, strict typecheck, and the live smoke + benchmark
 > battery in Illustrator.
 
 > **Staying current:** releases follow [SemVer](https://semver.org/)
-> (`v1.0.0`): patch = bug fix, minor = new feature, major = breaking change.
+> (`v1.1.0`): patch = bug fix, minor = new feature, major = breaking change.
 > Watch the repository → *Releases* to get notified, and read the release
 > notes before upgrading across a major bump.
 
@@ -208,7 +208,7 @@ ESCHARS.unload();
 // load (cached; idempotent) — throws if the DLL is missing (native-only)
 ESCHARS.load();
 ESCHARS.isLoaded();   // bool
-ESCHARS.version();    // "ESChars 1.0.0 ..."
+ESCHARS.version();    // "ESChars 1.1.0 ..."
 ESCHARS.bindings();   // [{ name, ok }] per-method binding report
 ESCHARS.unload();
 
@@ -229,7 +229,15 @@ ESCHARS.crc32(str);                // unsigned 32-bit CRC-32
 ESCHARS.fnv1a32(str);              // unsigned 32-bit FNV-1a
 ESCHARS.translate(str, hexTable);  // per-byte lookup; hexTable = 512 hex chars
 ESCHARS.b64ToHex(str);             // base64 decode + hex encode in ONE call
+
+// modern trim edge scans (Node/V8 semantics)
+ESCHARS.trimModern(str);           // trim both ends
+ESCHARS.trimModernLeft(str);       // trim leading edge only
+ESCHARS.trimModernRight(str);      // trim trailing edge only
+ESCHARS.trimModernBounds(str);     // "start,end" UTF-8 byte offsets after trim
 ```
+
+`trimModern*` strips the modern WhiteSpace + LineTerminator set used by ESSTR/Node/V8: TAB, VT, FF, CR, LF, SP, NBSP, U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, and U+FEFF. It intentionally keeps U+180E, U+0085, and U+200B. Because this is the direct ExternalObject string channel, callers that must preserve embedded NUL or lone surrogates must gate those inputs before calling; ESSTR does this and falls back to its pure scanner.
 
 ### Error contract
 
@@ -258,7 +266,7 @@ Negative codes are **fatal and uncatchable** — never produced by the DLL.
 | packBytes/unpackBytes 1.75x/3.7x | Live medians 16 K/64 K + round-trip equality | Verified |
 | FNV-1a("abc") = 0x1A47E90B | BigInt-exact vs FNV spec (note: the ArcFitEso prototype README's 0x1A47A1CB claim was wrong — algorithm matches the spec and the `"a"`=0xE40C292C / `"foobar"`=0xBF9CF968 vectors) | Verified |
 | NUL truncation / surrogate window | Live failures, then hex-table fix | Verified |
-| Node differential corpus (49 vectors + 360 K / 1 M lanes) | `npm test` | 73/73 |
+| Node differential corpus (49 vectors + 360 K / 1 M lanes) | `npm test` | 73/73 plus 1380 trim checks |
 | TypeScript strict | `npm run typecheck` | clean |
 | Live engine smoke + benchmark | `npm run live-verify` | Verified (Illustrator 30.6.0) |
 | Other hosts (AE/Premiere/PS) | — | **Unverified** — ThioUtils precedent suggests the direct interface works; not tested here |
@@ -350,7 +358,8 @@ npm install                          # esbuild + typescript
 npm run build                        # bundles src/index.ts -> dist/ESCHARS.jsx (+ eschars-core.esm.mjs)
 npm run build:native                 # compiles native/eschars.c -> native/bin/ESChars.dll
 npm run build:accel                  # dist/ESCHARS.accel.jsx + .min.jsx + manifest/facade (ESPACK v0.4)
-npm test                             # Node differential tests (core-test + differential; no Illustrator)
+npm test                             # Node differential tests (core + byte transforms + trim; no Illustrator)
+npm run test:trim                    # trimModern* differential only
 npm run typecheck                    # tsc --noEmit (strict)
 npm run live-verify                  # smoke + benchmark inside Illustrator via COM
 ```
@@ -371,7 +380,7 @@ The DLL uses the **documented Adobe `ExternalObject` direct interface** (`Tagged
 
 - `ESGetVersion` returns literal `1`; `ESFreeMem` = `free`; returned strings are malloc'd UTF-8 (freed by ExtendScript).
 - Every method is `long fn(TaggedData* argv, long argc, TaggedData* retval)`.
-- `ESInitialize` signature string: `getVersion_s,add_ff,charCodeAt_sd,fromCharCode_d,fnv1a32_s,packBytes_s,unpackBytes_s,hexEncode_s,hexDecode_s,crc32_s,translate_ss,b64ToHex_s,b64encode_s,b64decode_s,fail_u`.
+- `ESInitialize` signature string: `getVersion_s,add_ff,charCodeAt_sd,fromCharCode_d,fnv1a32_s,packBytes_s,unpackBytes_s,hexEncode_s,hexDecode_s,crc32_s,translate_ss,b64ToHex_s,b64encode_s,b64decode_s,trimModern_s,trimModernLeft_s,trimModernRight_s,trimModernBounds_s,fail_u`.
 - Custom catchable errors `>= 10000`; negative codes are fatal/uncatchable — never returned.
 - Built with MSVC x64 (`/O2 /LD /SUBSYSTEM:WINDOWS`); `build.ps1` auto-discovers VS2019/VS2022 BuildTools + Windows SDK.
 

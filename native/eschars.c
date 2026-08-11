@@ -28,6 +28,7 @@
  ***************************************************************************/
 
 #include "SoSharedLibDefs.h"
+#include <stdio.h>   /* _snprintf_s/_TRUNCATE (trimModernBounds) */
 #include <stdlib.h>
 #include <string.h>
 
@@ -47,7 +48,7 @@ ESCHARS_API char* ESInitialize(TaggedData* argv, long argc)
     (void)argc;
     /* Signature string: used for argument casting + reflection only;
        methods remain callable even without an entry (Adobe returns NULL). */
-    return "getVersion_s,add_ff,charCodeAt_sd,fromCharCode_d,fnv1a32_s,packBytes_s,unpackBytes_s,hexEncode_s,hexDecode_s,crc32_s,translate_ss,b64ToHex_s,b64encode_s,b64decode_s,fail_u";
+    return "getVersion_s,add_ff,charCodeAt_sd,fromCharCode_d,fnv1a32_s,packBytes_s,unpackBytes_s,hexEncode_s,hexDecode_s,crc32_s,translate_ss,b64ToHex_s,b64encode_s,b64decode_s,trimModern_s,trimModernLeft_s,trimModernRight_s,trimModernBounds_s,fail_u";
 }
 
 ESCHARS_API long ESGetVersion(void)
@@ -174,7 +175,7 @@ ESCHARS_API long getVersion(TaggedData* argv, long argc, TaggedData* retval)
     (void)argv;
     (void)argc;
     retval->type = kTypeString;
-    retval->data.string = dup_string("ESChars 1.0.0 (native charCodeAt/bulk-ops ExternalObject)");
+    retval->data.string = dup_string("ESChars 1.1.0 (native charCodeAt/bulk-ops/trim ExternalObject)");
     return kESErrOK;
 }
 
@@ -721,6 +722,140 @@ ESCHARS_API long b64ToHex(TaggedData* argv, long argc, TaggedData* retval)
     }
     free(dec);
     out[outlen * 2] = '\0';
+    retval->type = kTypeString;
+    retval->data.string = out;
+    return kESErrOK;
+}
+
+/* ---- modern trim / edge scan --------------------------------------------
+   Semantics match ESSTR/modern V8 trim over UTF-8 bytes (strip TAB LF VT FF
+   CR SP NBSP U+1680 U+2000-200A U+2028 U+2029 U+202F U+205F U+3000 U+FEFF;
+   keep U+180E U+0085 U+200B). Because the direct ExternalObject string
+   channel is C-NUL-terminated, U+0000 truncates at the boundary before this
+   function can see it. Lone surrogates are not valid UTF-8 and must be handled
+   by a caller-side fallback when code-unit preservation is required.
+
+   Boundary behavior (verified by native/trim-selftest.c + tests/trim-differential.mjs):
+   - NUL: strlen() stops at the first U+0000; bytes after it are invisible
+     to the scanner (the channel drops them, not this code).
+   - Surrogates: valid pairs pass through untouched (they encode as 4-byte
+     UTF-8 and never match the whitespace table); lone surrogates cannot
+     survive the UTF-16->UTF-8 channel (host substitutes/drops them).
+   - Bounds contract: trimModernBounds returns "st,en" as decimal UTF-8 byte
+     offsets into the ORIGINAL string; en is clamped to >= st, so an
+     all-whitespace input reports "len,len" (empty region at string end).
+   - All four methods: exactly 1 string arg; argc!=1 -> kESErrBadArgumentList
+     (TypeError); OOM -> kESErrNoMemory (house style, matches sibling
+     methods; note ESSTR uses a positive custom code instead). */
+
+static int trim_bytes_at(const unsigned char* s, size_t len, size_t pos,
+                         unsigned char a, unsigned char b, unsigned char c)
+{
+    return pos + 3 <= len && s[pos] == a && s[pos + 1] == b && s[pos + 2] == c;
+}
+
+static size_t trim_leading_ws_len(const unsigned char* s, size_t len, size_t pos)
+{
+    unsigned char c;
+    if (pos >= len) return 0;
+    c = s[pos];
+    if (c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D || c == 0x0B || c == 0x0C) return 1;
+    if (c == 0xC2 && pos + 1 < len && s[pos + 1] == 0xA0) return 2; /* NBSP */
+    if (trim_bytes_at(s, len, pos, 0xE1, 0x9A, 0x80)) return 3; /* U+1680 */
+    if (c == 0xE2 && pos + 2 < len) {
+        if (s[pos + 1] == 0x80) {
+            c = s[pos + 2];
+            if ((c >= 0x80 && c <= 0x8A) || c == 0xA8 || c == 0xA9 || c == 0xAF) return 3;
+        }
+        if (s[pos + 1] == 0x81 && s[pos + 2] == 0x9F) return 3; /* U+205F */
+    }
+    if (trim_bytes_at(s, len, pos, 0xE3, 0x80, 0x80)) return 3; /* U+3000 */
+    if (trim_bytes_at(s, len, pos, 0xEF, 0xBB, 0xBF)) return 3; /* U+FEFF */
+    return 0;
+}
+
+static size_t trim_trailing_ws_len(const unsigned char* s, size_t start, size_t end)
+{
+    unsigned char c;
+    if (end <= start) return 0;
+    c = s[end - 1];
+    if (c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D || c == 0x0B || c == 0x0C) return 1;
+    if (end >= start + 2 && s[end - 2] == 0xC2 && s[end - 1] == 0xA0) return 2;
+    if (end >= start + 3) {
+        size_t p = end - 3;
+        if (s[p] == 0xE1 && s[p + 1] == 0x9A && s[p + 2] == 0x80) return 3;
+        if (s[p] == 0xE2 && s[p + 1] == 0x80) {
+            c = s[p + 2];
+            if ((c >= 0x80 && c <= 0x8A) || c == 0xA8 || c == 0xA9 || c == 0xAF) return 3;
+        }
+        if (s[p] == 0xE2 && s[p + 1] == 0x81 && s[p + 2] == 0x9F) return 3;
+        if (s[p] == 0xE3 && s[p + 1] == 0x80 && s[p + 2] == 0x80) return 3;
+        if (s[p] == 0xEF && s[p + 1] == 0xBB && s[p + 2] == 0xBF) return 3;
+    }
+    return 0;
+}
+
+static char* trim_dup_range(const char* s, size_t start, size_t end)
+{
+    size_t n = end > start ? end - start : 0;
+    char* out = (char*)malloc(n + 1);
+    if (out == NULL) return NULL;
+    if (n) memcpy(out, s + start, n);
+    out[n] = '\0';
+    return out;
+}
+
+static long trim_modern_impl(TaggedData* argv, long argc, TaggedData* retval, int mode)
+{
+    const char* in;
+    const unsigned char* u;
+    size_t len, st, en, n;
+    char* out;
+    if (argc != 1 || argv[0].type != kTypeString || argv[0].data.string == NULL) {
+        return kESErrBadArgumentList;
+    }
+    in = argv[0].data.string;
+    u = (const unsigned char*)in;
+    len = strlen(in);
+    st = 0;
+    en = len;
+    if (mode != 2) {
+        while ((n = trim_leading_ws_len(u, len, st)) != 0) st += n;
+    }
+    if (mode != 1) {
+        while ((n = trim_trailing_ws_len(u, st, en)) != 0) en -= n;
+    }
+    out = trim_dup_range(in, st, en);
+    if (out == NULL) return kESErrNoMemory;
+    retval->type = kTypeString;
+    retval->data.string = out;
+    return kESErrOK;
+}
+
+ESCHARS_API long trimModern(TaggedData* argv, long argc, TaggedData* retval) { return trim_modern_impl(argv, argc, retval, 0); }
+ESCHARS_API long trimModernLeft(TaggedData* argv, long argc, TaggedData* retval) { return trim_modern_impl(argv, argc, retval, 1); }
+ESCHARS_API long trimModernRight(TaggedData* argv, long argc, TaggedData* retval) { return trim_modern_impl(argv, argc, retval, 2); }
+
+ESCHARS_API long trimModernBounds(TaggedData* argv, long argc, TaggedData* retval)
+{
+    const char* in;
+    const unsigned char* u;
+    size_t len, st, en, n;
+    char buf[64];
+    char* out;
+    if (argc != 1 || argv[0].type != kTypeString || argv[0].data.string == NULL) {
+        return kESErrBadArgumentList;
+    }
+    in = argv[0].data.string;
+    u = (const unsigned char*)in;
+    len = strlen(in);
+    st = 0;
+    en = len;
+    while ((n = trim_leading_ws_len(u, len, st)) != 0) st += n;
+    while ((n = trim_trailing_ws_len(u, st, en)) != 0) en -= n;
+    _snprintf_s(buf, sizeof(buf), _TRUNCATE, "%u,%u", (unsigned)st, (unsigned)en);
+    out = dup_string(buf);
+    if (out == NULL) return kESErrNoMemory;
     retval->type = kTypeString;
     retval->data.string = out;
     return kESErrOK;

@@ -11,6 +11,8 @@
  *             commands = b64encode b64decode hexEncode hexDecode crc32
  *                        fnv1a32 packBytes unpackBytes translate b64ToHex
  *                        charCodeAt fromCharCode
+ *                        trimModern trimModernLeft trimModernRight
+ *                        trimModernBounds
  *   Response: one frame of the result:
  *             "S" + u32le length + bytes          (kTypeString)
  *             "I" + i32le value                   (kTypeInteger)
@@ -275,6 +277,25 @@ int main(void)
             (void)l0;
             argv[0].type = kTypeInteger; argv[0].data.intval = strtol((const char*)a0, NULL, 10);
             rc = fromCharCode(argv, 1, &rv);
+            if (rc != kESErrOK) { write_error(rc); continue; }
+            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.data.string));
+            write_bytes((const unsigned char*)rv.data.string, strlen(rv.data.string));
+            free(a0);
+        }
+        else if (strcmp(cmd, "trimModern") == 0 || strcmp(cmd, "trimModernLeft") == 0 ||
+                 strcmp(cmd, "trimModernRight") == 0 || strcmp(cmd, "trimModernBounds") == 0) {
+            /* Native trim / edge-scan lanes. Frames are NUL-terminated before dispatch (read_frame), so an
+               embedded NUL truncates here exactly like the ExternalObject
+               C-string channel — the differential corpus must not carry NUL. */
+            unsigned char* a0; size_t l0; TaggedData argv[1]; TaggedData rv;
+            memset(&rv, 0, sizeof(rv));
+            if (!read_frame(&a0, &l0)) return 1;
+            (void)l0;
+            argv[0].type = kTypeString; argv[0].data.string = (char*)a0;
+            if (strcmp(cmd, "trimModern") == 0) rc = trimModern(argv, 1, &rv);
+            else if (strcmp(cmd, "trimModernLeft") == 0) rc = trimModernLeft(argv, 1, &rv);
+            else if (strcmp(cmd, "trimModernRight") == 0) rc = trimModernRight(argv, 1, &rv);
+            else rc = trimModernBounds(argv, 1, &rv);
             if (rc != kESErrOK) { write_error(rc); continue; }
             fputc('S', stdout); write_u32le((unsigned long)strlen(rv.data.string));
             write_bytes((const unsigned char*)rv.data.string, strlen(rv.data.string));

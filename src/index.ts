@@ -50,7 +50,11 @@ export var LIVE_API = [
   "translate",
   "b64ToHex",
   "b64encode",
-  "b64decode"
+  "b64decode",
+  "trimModern",
+  "trimModernLeft",
+  "trimModernRight",
+  "trimModernBounds"
 ];
 
 var cached: any = null;
@@ -351,6 +355,29 @@ export function translate(s: string, hexTable: string): string {
  * pipelines native-side to amortize the ~7 us/KB crossing). */
 export function b64ToHex(s: string): string {
   return String(call("b64ToHex", [s]));
+}
+
+/* ---- trim/edge-scan --------------------------------------------------------
+ * Modern trim semantics match ESSTR/Node/V8. This is a native whole-workload
+ * lane for long edge-whitespace strings; callers that must preserve embedded
+ * NUL or lone surrogates must fall back before crossing the ExternalObject
+ * string boundary. trimModernBounds returns UTF-8 byte offsets, not UTF-16
+ * code-unit indexes. */
+
+export function trimModern(s: string): string {
+  return String(call("trimModern", [s]));
+}
+
+export function trimModernLeft(s: string): string {
+  return String(call("trimModernLeft", [s]));
+}
+
+export function trimModernRight(s: string): string {
+  return String(call("trimModernRight", [s]));
+}
+
+export function trimModernBounds(s: string): string {
+  return String(call("trimModernBounds", [s]));
 }
 
 /* ---- diagnostics ---- */

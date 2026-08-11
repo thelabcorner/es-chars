@@ -8,3 +8,6 @@ __pycache__/
 native/bin/
 tests/.eschars-test.bundle.mjs
 tests/.eschars-live-verify.bundle.mjs
+native/trim-selftest.c
+probes/trim-lane-benchmark.jsx
+tests/trim-bench-run.mjs
