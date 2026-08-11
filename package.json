@@ -1,6 +1,6 @@
 {
   "name": "eschars",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "ESCHARS - native charCodeAt/fromCharCode, bulk byte/unit operations, and modern trim edge scans for Adobe ExtendScript (ES3) via a live-verified ExternalObject DLL",
   "type": "module",
   "main": "dist/eschars-core.esm.mjs",

@@ -160,7 +160,7 @@ function buildAccel() {
   }
   var accelBundle = join(DIST, '.eschars-accel-bundle.jsx');
   var manifestOut = join(DIST, 'ESCHARS.manifest.json');
-  execFileSync(process.execPath, [espackBuild, '--embed', dll, '--out', accelBundle,
+  execFileSync(process.execPath, [espackBuild, '--embed', dll, '--accel-version', '2', '--out', accelBundle,
     '--name', 'eschars', '--manifest-out', manifestOut, '--quiet'], { stdio: 'inherit' });
   var bundleText = readFileSync(accelBundle, 'utf8');
   var facadeText = readFileSync(join(DIST, 'ESCHARS.jsx'), 'utf8');
