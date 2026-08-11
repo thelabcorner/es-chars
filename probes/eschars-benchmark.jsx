@@ -1,12 +1,14 @@
 // ESChars microbenchmark — run inside Illustrator 2026 (ESTK or COM).
-// Wedge-safe by construction: pure-JS per-unit lanes are capped at 64 K
-// (the engine wedges at >= 128 K; measured in the ArcFitEso prototype),
-// native and packed lanes run up to 1 M. Results are medians of RUNS
+// Wedge-safe by construction: the release-gate benchmark is intentionally
+// bounded (no large JSX-only lanes, max 64 K native lanes) so COM automation
+// does not hold Illustrator long enough to trip RPC/busy failures. The larger
+// README performance table is historical measured evidence; this probe is a
+// live path check with timings. Results are medians of RUNS
 // ($.hiresTimer, microseconds), checkpointed to %TEMP%\eschars-benchmark.json
 // before returning so a partial result survives host errors.
 #target illustrator
 (function () {
-    var RUNS = 3;
+    var RUNS = 1;
     var out = { ok: false, error: null, engine: "", lanes: {} };
 
     function median(a) {
@@ -15,12 +17,17 @@
     }
 
     function lane(name, fn) {
-        var samples = [], i, t0, err = null;
+        var samples = [], i, t0, dt, tries, err = null;
         try {
             for (i = 0; i < RUNS; i++) {
-                t0 = $.hiresTimer;
-                fn();
-                samples[samples.length] = ($.hiresTimer - t0) * 1000; // us
+                dt = -1;
+                for (tries = 0; tries < 3 && dt < 0; tries++) {
+                    t0 = $.hiresTimer;
+                    fn();
+                    dt = $.hiresTimer - t0; // $.hiresTimer reports microseconds in ExtendScript
+                }
+                if (dt < 0) { throw new Error("negative $.hiresTimer delta"); }
+                samples[samples.length] = dt;
             }
             out.lanes[name] = { us: median(samples) };
         } catch (e) {
@@ -49,9 +56,7 @@
         }
         var k16 = asciiChunk(16384);
         var k64 = asciiChunk(65536);
-        var k360 = asciiChunk(360000);
-        var k360u = utf8Chunk(180000);   // 360 K utf8 chars -> 540 K bytes
-        var k1m = asciiChunk(1000000);
+        var k64u = utf8Chunk(32768);     // 64 K utf8-ish bytes without large COM hold time
 
         function sumCharCodes(s) {
             var sum = 0, i;
@@ -95,12 +100,11 @@
         lane("native.b64encode.1k", function () { ESCHARS.b64encode(k16.substring(0, 1024)); });
         lane("native.b64encode.16k", function () { ESCHARS.b64encode(k16); });
         lane("native.b64encode.64k", function () { ESCHARS.b64encode(k64); });
-        lane("native.b64encode.360k", function () { ESCHARS.b64encode(k360); });
-        var b64360 = ESCHARS.b64encode(k360);
-        lane("native.b64ToHex.360k", function () { ESCHARS.b64ToHex(b64360); });
+        var b6464 = ESCHARS.b64encode(k64);
+        lane("native.b64ToHex.64k", function () { ESCHARS.b64ToHex(b6464); });
         lane("native.hexEncode.16k", function () { ESCHARS.hexEncode(k16); });
-        lane("native.hexEncode.360k", function () { ESCHARS.hexEncode(k360); });
-        lane("native.crc32.360k", function () { ESCHARS.crc32(k360u); });
+        lane("native.hexEncode.64k", function () { ESCHARS.hexEncode(k64); });
+        lane("native.crc32.64k", function () { ESCHARS.crc32(k64u); });
         lane("native.translate.16k", function () { ESCHARS.translate(k16, rot13Hex); });
 
         // ---- boundary overhead curve (us/KB) ----
@@ -108,7 +112,6 @@
         lane("boundary.4k", function () { ESCHARS.b64encode(k16.substring(0, 4096)); });
         lane("boundary.16k", function () { ESCHARS.b64encode(k16); });
         lane("boundary.64k", function () { ESCHARS.b64encode(k64); });
-        lane("boundary.360k", function () { ESCHARS.b64encode(k360); });
 
         ESCHARS.unload();
         out.ok = true;

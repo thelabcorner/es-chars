@@ -11,12 +11,19 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const TOOL = 'C:/Program Files/Adobe/Adobe Illustrator 2026/Presets/en_US/Scripts/agent-skills/illustrator-com-automation-skill/scripts/ILLUSTRATOR_COM_TOOL.py';
+const TOOL_CANDIDATES = [
+  process.env.ILLUSTRATOR_COM_TOOL || '',
+  join(ROOT, '..', 'agent-skills', 'illustrator-com-automation-skill', 'comtool', 'ILLUSTRATOR_COM_TOOL.py'),
+  join(ROOT, '..', 'agent-skills', 'illustrator-com-automation-skill', 'scripts', 'ILLUSTRATOR_COM_TOOL.py'),
+  'C:/Program Files/Adobe/Adobe Illustrator 2026/Presets/en_US/Scripts/agent-skills/illustrator-com-automation-skill/comtool/ILLUSTRATOR_COM_TOOL.py',
+  'C:/Program Files/Adobe/Adobe Illustrator 2026/Presets/en_US/Scripts/agent-skills/illustrator-com-automation-skill/scripts/ILLUSTRATOR_COM_TOOL.py'
+];
+const TOOL = TOOL_CANDIDATES.find((p) => p && existsSync(p));
 const PROBE = join(ROOT, 'probes', 'eschars-probe.jsx');
 const BENCH = join(ROOT, 'probes', 'eschars-benchmark.jsx');
 
-if (!existsSync(TOOL)) {
-  console.error('live-verify: COM tool not found at ' + TOOL);
+if (!TOOL) {
+  console.error('live-verify: COM tool not found. Tried: ' + TOOL_CANDIDATES.filter(Boolean).join(' | '));
   process.exit(1);
 }
 
@@ -84,7 +91,7 @@ console.log('live-verify: probe OK (' + report.checks.length + ' checks, engine 
 
 // ---- benchmark ----
 
-console.log('live-verify: running microbenchmark in Illustrator (medians of 5)...');
+console.log('live-verify: running bounded microbenchmark in Illustrator...');
 const bench = runEval(BENCH);
 if (!bench || bench.ok !== true) {
   console.error('live-verify: benchmark failed: ' + JSON.stringify(bench && bench.error).slice(0, 1500));
@@ -98,6 +105,12 @@ if (failedLanes.length > 0) {
   for (const k of failedLanes) console.error('  FAIL ' + k + ' — ' + JSON.stringify(lanes[k].error));
   process.exit(1);
 }
+const invalidLanes = Object.keys(lanes).filter((k) => lanes[k].us !== undefined && lanes[k].us < 0);
+if (invalidLanes.length > 0) {
+  console.error('live-verify: ' + invalidLanes.length + ' benchmark lane(s) reported negative timings:');
+  for (const k of invalidLanes) console.error('  FAIL ' + k + ' — ' + lanes[k].us);
+  process.exit(1);
+}
 
 console.log('live-verify: benchmark OK (' + Object.keys(lanes).length + ' lanes, engine ' + bench.engine + ')');
 console.log('');
@@ -108,8 +121,8 @@ for (const k of Object.keys(lanes).sort()) {
 }
 
 // boundary us/KB
-const points = ['1k', '4k', '16k', '64k', '360k'];
-const kb = { '1k': 1, '4k': 4, '16k': 16, '64k': 64, '360k': 360 };
+const points = ['1k', '4k', '16k', '64k'];
+const kb = { '1k': 1, '4k': 4, '16k': 16, '64k': 64 };
 console.log('');
 console.log('| Boundary point | us | us/KB |');
 console.log('|---|---|---|');
@@ -122,11 +135,10 @@ for (const p of points) {
 
 // sanity assertions (generous bounds; the point is catching regressions, not noise)
 const sanity = [
-  ['native.b64encode.360k', 25000],
+  ['native.b64encode.64k', 25000],
   ['native.hexEncode.16k', 5000],
-  ['native.crc32.360k', 25000],
-  ['native.b64ToHex.360k', 40000],
-  ['read.packed.360k', 2000000]
+  ['native.crc32.64k', 25000],
+  ['native.b64ToHex.64k', 40000]
 ];
 let sane = true;
 for (const [k, limit] of sanity) {

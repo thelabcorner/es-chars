@@ -11,14 +11,14 @@
 [![Boundary: ~7 us/KB](https://img.shields.io/badge/boundary~%7C%7C~7%20us%2FKB-orange)](#whole-workload-native-transforms)
 [![Adobe: Creative Suite](https://img.shields.io/badge/Adobe%20-Creative%20Suite-red?logo=adobe&logoColor=white)](https://extendscript.docsforadobe.dev/)
 [![Engine: ES3](https://img.shields.io/badge/ExtendScript-ES3-green)](#compatibility)
-[![Size](https://img.shields.io/badge/wrapper-~8%20KB-orange)](#which-build-should-i-use)
+[![Size](https://img.shields.io/badge/wrapper-~11%20KB-orange)](#which-build-should-i-use)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL%203.0--or--later-blue)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 </div>
 
 ---
 
-> **From the same team: [ESON](https://github.com/thelabcorner/eson) — strict JSON for ExtendScript, [ESB64](https://github.com/thelabcorner/es-b64) — base64/UTF-8, ESARR — ES5 array methods, ESSTR — string trim, [ESPACK](https://github.com/thelabcorner/espack) — self-extracting ExternalObject bundles, ESOBF — obfuscation, and [ArcFit.dev](https://arcfit.dev) — deterministic arc warp for Illustrator.**
+> **From the same team: [ESON](https://github.com/thelabcorner/eson) — strict JSON for ExtendScript, [ESB64](https://github.com/thelabcorner/es-b64) — base64/UTF-8, [ESARR](https://github.com/thelabcorner/es-arr) — ES5 array methods, [ESSTR](https://github.com/thelabcorner/esstr) — string trim, [ESPACK](https://github.com/thelabcorner/espack) — self-extracting ExternalObject bundles, [ESOBF](https://github.com/thelabcorner/esobf) — obfuscation, and [ArcFit.dev](https://arcfit.dev) — deterministic arc warp for Illustrator.**
 
 ---
 
@@ -27,6 +27,7 @@
 - [Why ESCHARS?](#why-eschars)
 - [Features](#features)
 - [Which build should I use?](#which-build-should-i-use)
+- [Get the Release](#get-the-release)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [API](#api)
@@ -68,14 +69,57 @@ The library is **native-only with a hard failure if the DLL is missing** — the
 
 ## Which build should I use?
 
-| | **JSX bundle** | **DLL** |
-|---|---|---|
-| Files | `dist/ESCHARS.jsx` | `native/bin/ESChars.dll` |
-| Size | ~8 KB (wrapper) | ~20 KB (native) |
-| What it is | The ES3 wrapper facade + ES3 shims | The native ExternalObject DLL |
-| Required by | Your `.jsx` scripts | Resolved by the wrapper at runtime |
+| | **JSX bundle** | **DLL** | **ESPACK accel bundle** |
+|---|---|---|---|
+| Files | `dist/ESCHARS.jsx` | `native/bin/ESChars.dll` | `dist/ESCHARS.accel.jsx` / `.min.jsx` |
+| Size | ~11 KB (wrapper) | ~96 KB (native) | ~185 KB / ~164 KB minified |
+| What it is | The ES3 wrapper facade + ES3 shims | The native ExternalObject DLL | Self-extracting ESPACK v0.4 bundle: loader + `ESChars.dll` payload + ESCHARS facade |
+| Required by | Your `.jsx` scripts | Resolved by the wrapper at runtime | One-file release path; no separate DLL placement |
 
 The DLL must be loadable from the host (placed beside the script, on `ExternalObject.searchFolders`, or loaded by absolute path — the wrapper tries all of these). The JSX bundle `evalFile`s the wrapper and calls `ESCHARS.load()`.
+
+**Rule of thumb:** use `ESCHARS.accel.min.jsx` from the release when you want one file in the Scripts folder. Use `ESCHARS.jsx` + `ESChars.dll` when you own DLL staging yourself. Use `ESCHARS.manifest.json` + `ESCHARS.facade.jsx` when composing several ESPACK consumers into one merged bundle.
+
+---
+
+## Get the Release
+
+<div align="center">
+
+**All production bundles ship as GitHub release assets — this repo holds sources. Grab the runnable builds from the [Releases page](https://github.com/thelabcorner/es-chars/releases).**
+
+[![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/thelabcorner/es-chars/releases/tag/v1.0.0)
+[![Released: 2026-08-10](https://img.shields.io/badge/released-2026--08--10-lightgrey)](https://github.com/thelabcorner/es-chars/releases/tag/v1.0.0)
+[![Downloads](https://img.shields.io/github/downloads/thelabcorner/es-chars/total?color=blueviolet)](https://github.com/thelabcorner/es-chars/releases)
+
+</div>
+
+**How it works, in three steps:**
+
+1. Open the [Releases page](https://github.com/thelabcorner/es-chars/releases).
+2. Pick the **latest stable** tag.
+3. Download the asset that matches your use case:
+
+| You are... | Take this release | And this asset |
+|---|---|---|
+| Dropping one file into the Scripts folder with zero install steps (self-extracting `ESChars.dll` included) | v1.0.0 | `ESCHARS.accel.min.jsx` |
+| Auditing or debugging the self-extracting bundle before minification | v1.0.0 | `ESCHARS.accel.jsx` |
+| Loading the native DLL from your own `ExternalObject` setup | v1.0.0 | `ESCHARS.jsx` + `ESChars.dll` |
+| Composing several ESPACK consumers into one merged bundle | main | `npm run build:accel` → `ESCHARS.manifest.json` + `ESCHARS.facade.jsx` (composer inputs, not release assets) |
+| Running Node-side tests or reading the core facade | v1.0.0 | `eschars-core.esm.mjs` |
+| Building from source / reading the implementation | main | the repo |
+
+> **Rule of thumb: start with the latest stable tag.** Every release asset is
+> produced by `npm run build` + `npm run build:accel` from the exact tagged
+> commit, and no release is tagged before it passes the full gate: 49 Node
+> core assertions, 73/73 differential checks (byte-exact vs Node reference,
+> incl. 360 K / 1 M lanes), strict typecheck, and the live smoke + benchmark
+> battery in Illustrator.
+
+> **Staying current:** releases follow [SemVer](https://semver.org/)
+> (`v1.0.0`): patch = bug fix, minor = new feature, major = breaking change.
+> Watch the repository → *Releases* to get notified, and read the release
+> notes before upgrading across a major bump.
 
 ---
 
@@ -259,10 +303,21 @@ All measured live on Illustrator 30.6.0 / ExtendScript 4.5.6.
 npm install                          # esbuild + typescript
 npm run build                        # bundles src/index.ts -> dist/ESCHARS.jsx (+ eschars-core.esm.mjs)
 npm run build:native                 # compiles native/eschars.c -> native/bin/ESChars.dll
+npm run build:accel                  # dist/ESCHARS.accel.jsx + .min.jsx + manifest/facade (ESPACK v0.4)
 npm test                             # Node differential tests (core-test + differential; no Illustrator)
 npm run typecheck                    # tsc --noEmit (strict)
 npm run live-verify                  # smoke + benchmark inside Illustrator via COM
 ```
+
+**Merge architecture (ESPACK v0.4.0).** `build:accel` also emits composition
+artifacts for hosts that bundle multiple ESPACK consumers in one file:
+`dist/ESCHARS.manifest.json` (schema v1, byte-identical to
+`espack-build --manifest-out`) and `dist/ESCHARS.facade.jsx` (loader-free facade
++ adapter, requires `ESPAK` on `$.global`). A composer merges manifests with
+`espack-merge.mjs` into ONE loader and appends the facades. The adapter loads
+the payload **by name** (`ESPAK.load("ESChars")`) — index 0 is not a stable API
+under a merged bundle. The standalone `ESCHARS.accel.jsx` is unchanged in
+composition and remains the one-file release asset.
 
 ### Native build details
 
@@ -307,7 +362,7 @@ eschars/
 ├── src/
 │   ├── index.ts                     # ES3-safe wrapper (the bundle entry point)
 │   └── globals.d.ts                 # ExternalObject / $ / File declarations
-├── dist/                            # generated: ESCHARS.jsx, eschars-core.esm.mjs
+├── dist/                            # generated: ESCHARS.jsx, eschars-core.esm.mjs, ESPACK accel artifacts
 ├── tests/
 │   ├── refs.mjs                     # Node reference implementations
 │   ├── vectors.mjs                  # 49-vector corpus + 360 K / 1 M large cases

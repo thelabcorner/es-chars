@@ -3,6 +3,13 @@
 //   dist/ESCHARS.jsx               - bannerless IIFE (COM-eval / $.evalFile safe),
 //                                    defines var ESCHARS (the facade)
 //   dist/eschars-core.esm.mjs      - ESM bundle of the core for Node harnesses
+//   dist/ESCHARS.accel.jsx         - (--accel) ESPACK v0.4 self-extracting
+//                                    bundle: ESChars.dll payload + ESCHARS
+//                                    facade + load-by-name adapter
+//   dist/ESCHARS.accel.min.jsx     - (--accel) minified release bundle
+//   dist/ESCHARS.manifest.json     - (--accel) merge-spec manifest sidecar
+//   dist/ESCHARS.facade.jsx        - (--accel) loader-free facade for
+//                                    espack-merge composers
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -96,5 +103,103 @@ var shim = [
 var finalJsx = shim + readFileSync(jsx, 'utf8');
 finalJsx = finalJsx.replace(/"use strict";?/g, '');
 writeFileSync(jsx, finalJsx);
+
+// 3. Accelerated self-extracting bundle (ESCHARS.accel.jsx): ESPACK "1 + n".
+//    ESChars.dll is the payload; the current sibling ESPACK loader (v0.4.0)
+//    embeds/discovers the shared ESB64Native accelerator and emits the v1
+//    merge manifest. The adapter loads by PAYLOAD NAME ("ESChars"), never by
+//    index, because merged bundles have unstable payload indexes.
+var ACCELERATOR = [
+  '',
+  '(function () {',
+  '  // ESCHARS espack adapter: ESPAK.load("ESChars") materializes ESChars.dll',
+  '  // (via the shared accelerator when available), then asks the ESCHARS',
+  '  // facade to load that extracted absolute DLL path. Auto-enables on eval;',
+  '  // ESCHARS.useEspack() is the opt-in/idempotent form. ESCHARS.espack holds',
+  '  // the last outcome.',
+  '  if (typeof ESPAK !== "object" || !ESPAK || typeof ESPAK.load !== "function") return;',
+  '  if (typeof ESCHARS !== "object" || !ESCHARS || typeof ESCHARS.load !== "function") return;',
+  '  var cached = null;',
+  '  function useEspack() {',
+  '    // Merge architecture v1: load by NAME, never load(0).',
+  '    var l = ESPAK.load("ESChars");',
+  '    if (!l || !l.ok || !l.path) {',
+  '      cached = { ok: false, reason: (l && l.error) || "ESPAK load failed" };',
+  '      return cached;',
+  '    }',
+  '    try {',
+  '      var lib = ESCHARS.load({ path: l.path });',
+  '      cached = { ok: !!lib, mode: l.mode, path: l.path };',
+  '    } catch (e) {',
+  '      cached = { ok: false, reason: String(e), path: l.path };',
+  '    }',
+  '    return cached;',
+  '  }',
+  '  ESCHARS.useEspack = useEspack;',
+  '  ESCHARS.espack = useEspack();',
+  '  var g = null;',
+  '  try { if (typeof $ !== "undefined" && $.global) { g = $.global; } } catch (e1) {}',
+  '  if (g) {',
+  '    g.ESCHARS = ESCHARS;',
+  '    g.ESPAK = ESPAK;',
+  '  }',
+  '}());',
+  ''
+].join('\n');
+
+function buildAccel() {
+  var espackBuild = join(ROOT, '..', 'espack', 'espack-build.mjs');
+  var dll = join(ROOT, 'native', 'bin', 'ESChars.dll');
+  if (!existsSync(espackBuild)) {
+    console.log('[eschars-build] accel skipped: espack repo not found at ' + join(ROOT, '..', 'espack'));
+    return;
+  }
+  if (!existsSync(dll)) {
+    console.log('[eschars-build] accel skipped: ' + dll + ' missing (run npm run build:native)');
+    return;
+  }
+  var accelBundle = join(DIST, '.eschars-accel-bundle.jsx');
+  var manifestOut = join(DIST, 'ESCHARS.manifest.json');
+  execFileSync(process.execPath, [espackBuild, '--embed', dll, '--out', accelBundle,
+    '--name', 'eschars', '--manifest-out', manifestOut, '--quiet'], { stdio: 'inherit' });
+  var bundleText = readFileSync(accelBundle, 'utf8');
+  var facadeText = readFileSync(join(DIST, 'ESCHARS.jsx'), 'utf8');
+  var facadeOut = facadeText + '\n' + ACCELERATOR +
+    '// ESCHARS.facade.jsx - loader-free facade + espack adapter (composer appends to a merged bundle; requires ESPAK on $.global)\n';
+  writeFileSync(join(DIST, 'ESCHARS.facade.jsx'), facadeOut);
+  var accelOut = bundleText + '\n' + facadeText + '\n' + ACCELERATOR +
+    '// ESCHARS.accel.jsx - self-extracting single-file bundle (espack v0.4 + ESCHARS + native DLL gate)\n';
+  writeFileSync(join(DIST, 'ESCHARS.accel.jsx'), accelOut);
+  console.log('[eschars-build] wrote ' + join(DIST, 'ESCHARS.accel.jsx') + ' (' + accelOut.length + ' bytes)');
+  console.log('[eschars-build] wrote ' + manifestOut + ' and ' + join(DIST, 'ESCHARS.facade.jsx'));
+  minifyAccel(accelOut);
+}
+
+function minifyAccel(accelOut) {
+  var skillDir = join(ROOT, '..', 'agent-skills', 'adobe-extendscript-minification');
+  var minifyScript = join(skillDir, 'scripts', 'minify-jsx.py');
+  var minifyConfig = join(skillDir, 'configs', 'conservative.json');
+  if (!existsSync(minifyScript) || !existsSync(minifyConfig)) {
+    console.log('[eschars-build] accel minify skipped: minification skill not found at ' + skillDir);
+    return;
+  }
+  var m = accelOut.match(/^\/\*[\s\S]*?\*\//);
+  var banner = m ? m[0] : '';
+  var body = m ? accelOut.substring(m[0].length) : accelOut;
+  var bodyPath = join(DIST, '.eschars-accel-bundle.body.jsx');
+  var minPath = join(DIST, '.eschars-accel-bundle.min.jsx');
+  writeFileSync(bodyPath, body, 'utf8');
+  execFileSync('python', [minifyScript, '--in', bodyPath, '--config', minifyConfig,
+    '--out', minPath], { stdio: 'inherit' });
+  var minBody = readFileSync(minPath, 'utf8');
+  var minOut = (banner ? banner + '\n' : '') + minBody;
+  var minFinal = join(DIST, 'ESCHARS.accel.min.jsx');
+  writeFileSync(minFinal, minOut, 'utf8');
+  console.log('[eschars-build] wrote ' + minFinal + ' (' + minOut.length + ' bytes, banner preserved)');
+}
+
+if (process.argv.includes('--accel')) {
+  buildAccel();
+}
 
 console.log('[eschars-build] wrote ' + join(DIST, 'ESCHARS.jsx') + ' and ' + join(DIST, 'eschars-core.esm.mjs'));
