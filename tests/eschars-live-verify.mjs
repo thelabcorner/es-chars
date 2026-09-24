@@ -21,14 +21,16 @@ const TOOL_CANDIDATES = [
 const TOOL = TOOL_CANDIDATES.find((p) => p && existsSync(p));
 const PROBE = join(ROOT, 'probes', 'eschars-probe.jsx');
 const BENCH = join(ROOT, 'probes', 'eschars-benchmark.jsx');
+const ACCEL = join(ROOT, 'dist', 'ESCHARS.accel.jsx');
+const ACCEL_MIN = join(ROOT, 'dist', 'ESCHARS.accel.min.jsx');
 
 if (!TOOL) {
   console.error('live-verify: COM tool not found. Tried: ' + TOOL_CANDIDATES.filter(Boolean).join(' | '));
   process.exit(1);
 }
 
-function runEval(file) {
-  const pyOut = execFileSync('python', [TOOL, 'eval', '--file', file.replace(/\\/g, '/'), '--launch'], {
+function runTool(args) {
+  const pyOut = execFileSync('python', [TOOL].concat(args), {
     encoding: 'utf8', timeout: 600000
   });
   let env;
@@ -42,6 +44,11 @@ function runEval(file) {
     console.error('live-verify: tool error: ' + JSON.stringify(env).slice(0, 1500));
     process.exit(1);
   }
+  return env;
+}
+
+function runEval(file) {
+  const env = runTool(['eval', '--file', file.replace(/\\/g, '/'), '--launch']);
   // envelope {"ok":true,"op":"eval","result": ...} -> probe's wrapped
   // {"ok":true,"result":<report>} -> report
   const wrapped = env.result;
@@ -52,6 +59,27 @@ function runEval(file) {
     return wrapped; // tool may unwrap in some paths
   }
   return wrapped;
+}
+
+function verifyAcceleratedArtifact(label, file) {
+  console.log('live-verify: evaluating ' + label + ' in Illustrator...');
+  runTool(['eval', '--file', file.replace(/\\/g, '/'), '--launch']);
+  const state = runTool([
+    'eval',
+    '--expr', '$.global.ESCHARS && $.global.ESCHARS.espack',
+    '--expr', '$.global.ESCHARS && $.global.ESCHARS.isLoaded()',
+    '--expr', '$.global.ESCHARS && $.global.ESCHARS.crc32("123456789")',
+    '--launch'
+  ]).result;
+  const espak = state && state[0];
+  const loaded = state && state[1];
+  const crc = state && state[2];
+  if (!espak || espak.ok !== true || espak.mode !== 'native' || !espak.path ||
+      loaded !== true || crc !== 3421780262) {
+    console.error('live-verify: ' + label + ' behavioral gate failed: ' + JSON.stringify(state).slice(0, 1800));
+    process.exit(1);
+  }
+  console.log('live-verify: ' + label + ' OK (native payload ' + espak.path + ')');
 }
 
 // ---- probe ----
@@ -88,6 +116,11 @@ if (bad.length > 0) {
   process.exit(1);
 }
 console.log('live-verify: probe OK (' + report.checks.length + ' checks, engine ' + report.engine + ')');
+
+// ---- accelerated artifacts ----
+
+verifyAcceleratedArtifact('ESCHARS.accel.jsx', ACCEL);
+verifyAcceleratedArtifact('ESCHARS.accel.min.jsx', ACCEL_MIN);
 
 // ---- benchmark ----
 

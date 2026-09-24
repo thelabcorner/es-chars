@@ -14,9 +14,9 @@
  *                        trimModern trimModernLeft trimModernRight
  *                        trimModernBounds
  *   Response: one frame of the result:
- *             "S" + u32le length + bytes          (kTypeString)
- *             "I" + i32le value                   (kTypeInteger)
- *             "D" + f64le value                   (kTypeDouble)
+ *             "S" + u32le length + bytes          (ESABI_TYPE_STRING)
+ *             "I" + i32le value                   (ESABI_TYPE_INTEGER)
+ *             "D" + f64le value                   (ESABI_TYPE_DOUBLE)
  *             "E" + i32le error code              (method error code)
  *
  * Exit code 0 always (results/errors travel in-band); stdin EOF -> exit.
@@ -154,132 +154,132 @@ int main(void)
         }
 
         if (strcmp(cmd, "b64encode") == 0) {
-            unsigned char* a0; size_t l0; TaggedData argv[1]; TaggedData rv;
+            unsigned char* a0; size_t l0; esabi_value argv[1]; esabi_value rv;
             memset(&rv, 0, sizeof(rv));
             if (!read_frame(&a0, &l0)) return 1;
             (void)l0;
-            argv[0].type = kTypeString; argv[0].data.string = (char*)a0;
+            argv[0].type = ESABI_TYPE_STRING; argv[0].payload.string_value = (char*)a0;
             rc = b64encode(argv, 1, &rv);
-            if (rc != kESErrOK) { write_error(rc); continue; }
-            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.data.string));
-            write_bytes((const unsigned char*)rv.data.string, strlen(rv.data.string));
+            if (rc != ESABI_OK) { write_error(rc); continue; }
+            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.payload.string_value));
+            write_bytes((const unsigned char*)rv.payload.string_value, strlen(rv.payload.string_value));
             free(a0);
         }
         else if (strcmp(cmd, "b64decode") == 0) {
-            unsigned char* a0; size_t l0; size_t n, outlen; TaggedData argv[1]; TaggedData rv;
+            unsigned char* a0; size_t l0; size_t n, outlen; esabi_value argv[1]; esabi_value rv;
             memset(&rv, 0, sizeof(rv));
             if (!read_frame(&a0, &l0)) return 1;
             (void)l0;
-            argv[0].type = kTypeString; argv[0].data.string = (char*)a0;
+            argv[0].type = ESABI_TYPE_STRING; argv[0].payload.string_value = (char*)a0;
             rc = b64decode(argv, 1, &rv);
-            if (rc != kESErrOK) { write_error(rc); continue; }
+            if (rc != ESABI_OK) { write_error(rc); continue; }
             /* True decoded length (the JS side would truncate at the first
                NUL — strlen here would hide binary-decode errors). */
             n = strlen((const char*)a0);
             while (n > 0 && (a0[n - 1] == '=' || a0[n - 1] == '\r' || a0[n - 1] == '\n')) n--;
             outlen = (n / 4) * 3 + (n % 4 == 2 ? 1u : (n % 4 == 3 ? 2u : 0u));
             fputc('S', stdout); write_u32le((unsigned long)outlen);
-            write_bytes((const unsigned char*)rv.data.string, outlen);
+            write_bytes((const unsigned char*)rv.payload.string_value, outlen);
             free(a0);
         }
         else if (strcmp(cmd, "hexEncode") == 0) {
-            unsigned char* a0; size_t l0; TaggedData argv[1]; TaggedData rv;
+            unsigned char* a0; size_t l0; esabi_value argv[1]; esabi_value rv;
             memset(&rv, 0, sizeof(rv));
             if (!read_frame(&a0, &l0)) return 1;
             (void)l0;
-            argv[0].type = kTypeString; argv[0].data.string = (char*)a0;
+            argv[0].type = ESABI_TYPE_STRING; argv[0].payload.string_value = (char*)a0;
             rc = hexEncode(argv, 1, &rv);
-            if (rc != kESErrOK) { write_error(rc); continue; }
-            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.data.string));
-            write_bytes((const unsigned char*)rv.data.string, strlen(rv.data.string));
+            if (rc != ESABI_OK) { write_error(rc); continue; }
+            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.payload.string_value));
+            write_bytes((const unsigned char*)rv.payload.string_value, strlen(rv.payload.string_value));
             free(a0);
         }
         else if (strcmp(cmd, "hexDecode") == 0) {
-            unsigned char* a0; size_t l0; size_t n; TaggedData argv[1]; TaggedData rv;
+            unsigned char* a0; size_t l0; size_t n; esabi_value argv[1]; esabi_value rv;
             memset(&rv, 0, sizeof(rv));
             if (!read_frame(&a0, &l0)) return 1;
             (void)l0;
-            argv[0].type = kTypeString; argv[0].data.string = (char*)a0;
+            argv[0].type = ESABI_TYPE_STRING; argv[0].payload.string_value = (char*)a0;
             rc = hexDecode(argv, 1, &rv);
-            if (rc != kESErrOK) { write_error(rc); continue; }
+            if (rc != ESABI_OK) { write_error(rc); continue; }
             /* true decoded length = input length / 2 (NUL-safe reporting) */
             n = strlen((const char*)a0) / 2;
             fputc('S', stdout); write_u32le((unsigned long)n);
-            write_bytes((const unsigned char*)rv.data.string, n);
+            write_bytes((const unsigned char*)rv.payload.string_value, n);
             free(a0);
         }
         else if (strcmp(cmd, "crc32") == 0 || strcmp(cmd, "fnv1a32") == 0) {
-            unsigned char* a0; size_t l0; TaggedData argv[1]; TaggedData rv;
+            unsigned char* a0; size_t l0; esabi_value argv[1]; esabi_value rv;
             memset(&rv, 0, sizeof(rv));
             if (!read_frame(&a0, &l0)) return 1;
             (void)l0;
-            argv[0].type = kTypeString; argv[0].data.string = (char*)a0;
+            argv[0].type = ESABI_TYPE_STRING; argv[0].payload.string_value = (char*)a0;
             rc = (strcmp(cmd, "crc32") == 0) ? crc32(argv, 1, &rv) : fnv1a32(argv, 1, &rv);
-            if (rc != kESErrOK) { write_error(rc); continue; }
-            fputc('I', stdout); write_i32le(rv.data.intval);
+            if (rc != ESABI_OK) { write_error(rc); continue; }
+            fputc('I', stdout); write_i32le(rv.payload.signed_value);
             free(a0);
         }
         else if (strcmp(cmd, "packBytes") == 0 || strcmp(cmd, "unpackBytes") == 0) {
-            unsigned char* a0; size_t l0; TaggedData argv[1]; TaggedData rv;
+            unsigned char* a0; size_t l0; esabi_value argv[1]; esabi_value rv;
             memset(&rv, 0, sizeof(rv));
             if (!read_frame(&a0, &l0)) return 1;
             (void)l0;
-            argv[0].type = kTypeString; argv[0].data.string = (char*)a0;
+            argv[0].type = ESABI_TYPE_STRING; argv[0].payload.string_value = (char*)a0;
             rc = (strcmp(cmd, "packBytes") == 0) ? packBytes(argv, 1, &rv) : unpackBytes(argv, 1, &rv);
-            if (rc != kESErrOK) { write_error(rc); continue; }
-            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.data.string));
-            write_bytes((const unsigned char*)rv.data.string, strlen(rv.data.string));
+            if (rc != ESABI_OK) { write_error(rc); continue; }
+            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.payload.string_value));
+            write_bytes((const unsigned char*)rv.payload.string_value, strlen(rv.payload.string_value));
             free(a0);
         }
         else if (strcmp(cmd, "translate") == 0) {
-            unsigned char* a0; size_t l0; unsigned char* a1; size_t l1; TaggedData argv[2]; TaggedData rv;
+            unsigned char* a0; size_t l0; unsigned char* a1; size_t l1; esabi_value argv[2]; esabi_value rv;
             memset(&rv, 0, sizeof(rv));
             if (!read_frame(&a0, &l0)) return 1;
             if (!read_frame(&a1, &l1)) return 1;
             (void)l0; (void)l1;
-            argv[0].type = kTypeString; argv[0].data.string = (char*)a0;
-            argv[1].type = kTypeString; argv[1].data.string = (char*)a1;
+            argv[0].type = ESABI_TYPE_STRING; argv[0].payload.string_value = (char*)a0;
+            argv[1].type = ESABI_TYPE_STRING; argv[1].payload.string_value = (char*)a1;
             rc = translate(argv, 2, &rv);
-            if (rc != kESErrOK) { write_error(rc); continue; }
-            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.data.string));
-            write_bytes((const unsigned char*)rv.data.string, strlen(rv.data.string));
+            if (rc != ESABI_OK) { write_error(rc); continue; }
+            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.payload.string_value));
+            write_bytes((const unsigned char*)rv.payload.string_value, strlen(rv.payload.string_value));
             free(a0); free(a1);
         }
         else if (strcmp(cmd, "b64ToHex") == 0) {
-            unsigned char* a0; size_t l0; TaggedData argv[1]; TaggedData rv;
+            unsigned char* a0; size_t l0; esabi_value argv[1]; esabi_value rv;
             memset(&rv, 0, sizeof(rv));
             if (!read_frame(&a0, &l0)) return 1;
             (void)l0;
-            argv[0].type = kTypeString; argv[0].data.string = (char*)a0;
+            argv[0].type = ESABI_TYPE_STRING; argv[0].payload.string_value = (char*)a0;
             rc = b64ToHex(argv, 1, &rv);
-            if (rc != kESErrOK) { write_error(rc); continue; }
-            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.data.string));
-            write_bytes((const unsigned char*)rv.data.string, strlen(rv.data.string));
+            if (rc != ESABI_OK) { write_error(rc); continue; }
+            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.payload.string_value));
+            write_bytes((const unsigned char*)rv.payload.string_value, strlen(rv.payload.string_value));
             free(a0);
         }
         else if (strcmp(cmd, "charCodeAt") == 0) {
-            unsigned char* a0; size_t l0; unsigned char* a1; size_t l1; TaggedData argv[2]; TaggedData rv;
+            unsigned char* a0; size_t l0; unsigned char* a1; size_t l1; esabi_value argv[2]; esabi_value rv;
             memset(&rv, 0, sizeof(rv));
             if (!read_frame(&a0, &l0)) return 1;
             if (!read_frame(&a1, &l1)) return 1;
             (void)l1;
-            argv[0].type = kTypeString; argv[0].data.string = (char*)a0;
-            argv[1].type = kTypeInteger; argv[1].data.intval = strtol((const char*)a1, NULL, 10);
+            argv[0].type = ESABI_TYPE_STRING; argv[0].payload.string_value = (char*)a0;
+            argv[1].type = ESABI_TYPE_INTEGER; argv[1].payload.signed_value = strtol((const char*)a1, NULL, 10);
             rc = charCodeAt(argv, 2, &rv);
-            if (rc != kESErrOK) { write_error(rc); continue; }
-            fputc('I', stdout); write_i32le(rv.data.intval);
+            if (rc != ESABI_OK) { write_error(rc); continue; }
+            fputc('I', stdout); write_i32le(rv.payload.signed_value);
             free(a0); free(a1);
         }
         else if (strcmp(cmd, "fromCharCode") == 0) {
-            unsigned char* a0; size_t l0; TaggedData argv[1]; TaggedData rv;
+            unsigned char* a0; size_t l0; esabi_value argv[1]; esabi_value rv;
             memset(&rv, 0, sizeof(rv));
             if (!read_frame(&a0, &l0)) return 1;
             (void)l0;
-            argv[0].type = kTypeInteger; argv[0].data.intval = strtol((const char*)a0, NULL, 10);
+            argv[0].type = ESABI_TYPE_INTEGER; argv[0].payload.signed_value = strtol((const char*)a0, NULL, 10);
             rc = fromCharCode(argv, 1, &rv);
-            if (rc != kESErrOK) { write_error(rc); continue; }
-            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.data.string));
-            write_bytes((const unsigned char*)rv.data.string, strlen(rv.data.string));
+            if (rc != ESABI_OK) { write_error(rc); continue; }
+            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.payload.string_value));
+            write_bytes((const unsigned char*)rv.payload.string_value, strlen(rv.payload.string_value));
             free(a0);
         }
         else if (strcmp(cmd, "trimModern") == 0 || strcmp(cmd, "trimModernLeft") == 0 ||
@@ -287,18 +287,18 @@ int main(void)
             /* Native trim / edge-scan lanes. Frames are NUL-terminated before dispatch (read_frame), so an
                embedded NUL truncates here exactly like the ExternalObject
                C-string channel — the differential corpus must not carry NUL. */
-            unsigned char* a0; size_t l0; TaggedData argv[1]; TaggedData rv;
+            unsigned char* a0; size_t l0; esabi_value argv[1]; esabi_value rv;
             memset(&rv, 0, sizeof(rv));
             if (!read_frame(&a0, &l0)) return 1;
             (void)l0;
-            argv[0].type = kTypeString; argv[0].data.string = (char*)a0;
+            argv[0].type = ESABI_TYPE_STRING; argv[0].payload.string_value = (char*)a0;
             if (strcmp(cmd, "trimModern") == 0) rc = trimModern(argv, 1, &rv);
             else if (strcmp(cmd, "trimModernLeft") == 0) rc = trimModernLeft(argv, 1, &rv);
             else if (strcmp(cmd, "trimModernRight") == 0) rc = trimModernRight(argv, 1, &rv);
             else rc = trimModernBounds(argv, 1, &rv);
-            if (rc != kESErrOK) { write_error(rc); continue; }
-            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.data.string));
-            write_bytes((const unsigned char*)rv.data.string, strlen(rv.data.string));
+            if (rc != ESABI_OK) { write_error(rc); continue; }
+            fputc('S', stdout); write_u32le((unsigned long)strlen(rv.payload.string_value));
+            write_bytes((const unsigned char*)rv.payload.string_value, strlen(rv.payload.string_value));
             free(a0);
         }
         else {

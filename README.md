@@ -143,8 +143,8 @@ The DLL must be loadable from the host (placed beside the script, on `ExternalOb
 
 **All production bundles ship as GitHub release assets — this repo holds sources. Grab the runnable builds from the [Releases page](https://github.com/thelabcorner/es-chars/releases).**
 
-[![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue)](https://github.com/thelabcorner/es-chars/releases/tag/v1.1.0)
-[![Released: 2026-08-10](https://img.shields.io/badge/released-2026--08--10-lightgrey)](https://github.com/thelabcorner/es-chars/releases/tag/v1.1.0)
+[![Release: v1.1.2](https://img.shields.io/badge/release-v1.1.2-blue)](https://github.com/thelabcorner/es-chars/releases/tag/v1.1.2)
+[![Released: 2026-09-23](https://img.shields.io/badge/released-2026--09--23-lightgrey)](https://github.com/thelabcorner/es-chars/releases/tag/v1.1.2)
 [![Downloads](https://img.shields.io/github/downloads/thelabcorner/es-chars/total?color=blueviolet)](https://github.com/thelabcorner/es-chars/releases)
 
 </div>
@@ -217,7 +217,7 @@ ESCHARS.unload();
 // load (cached; idempotent) — throws if the DLL is missing (native-only)
 ESCHARS.load();
 ESCHARS.isLoaded();   // bool
-ESCHARS.version();    // "ESChars 1.1.0 ..."
+ESCHARS.version();    // "ESChars 1.1.2 ..."
 ESCHARS.bindings();   // [{ name, ok }] per-method binding report
 ESCHARS.unload();
 
@@ -363,6 +363,7 @@ All measured live on Illustrator 30.6.0 / ExtendScript 4.5.6.
 ## Development
 
 ```
+git submodule update --init --recursive  # pins ESABI v0.3.0
 npm install                          # esbuild + typescript
 npm run build                        # bundles src/index.ts -> dist/ESCHARS.jsx (+ eschars-core.esm.mjs)
 npm run build:native                 # compiles native/eschars.c -> native/bin/ESChars.dll
@@ -385,10 +386,11 @@ composition and remains the one-file release asset.
 
 ### Native build details
 
-The DLL uses the **documented Adobe `ExternalObject` direct interface** (`TaggedData` / `SoSharedLibDefs.h`), modeled on Adobe's own `AdobeXMPScript` (decompiled) and ThioJoe's ThioUtils:
+The DLL uses the documented Adobe `ExternalObject` direct interface through **[ESABI v0.3.0](https://github.com/thelabcorner/esabi/releases/tag/v0.3.0)**. The repository pins ESABI as `deps/esabi`, so the production build no longer vendors Adobe's historical `SoSharedLibDefs.h`.
 
+- ESABI supplies the value layout, tag/error values, 8-byte packing contract, C linkage, lifecycle declarations, and Windows cdecl boundary.
 - `ESGetVersion` returns literal `1`; `ESFreeMem` = `free`; returned strings are malloc'd UTF-8 (freed by ExtendScript).
-- Every method is `long fn(TaggedData* argv, long argc, TaggedData* retval)`.
+- Business methods use the same direct-method shape over `esabi_value`; the four lifecycle exports use ESABI's exact declaration macros.
 - `ESInitialize` signature string: `getVersion_s,add_ff,charCodeAt_sd,fromCharCode_d,fnv1a32_s,packBytes_s,unpackBytes_s,hexEncode_s,hexDecode_s,crc32_s,translate_ss,b64ToHex_s,b64encode_s,b64decode_s,trimModern_s,trimModernLeft_s,trimModernRight_s,trimModernBounds_s,fail_u`.
 - Custom catchable errors `>= 10000`; negative codes are fatal/uncatchable — never returned.
 - Built with MSVC x64 (`/O2 /LD /SUBSYSTEM:WINDOWS`); `build.ps1` auto-discovers VS2019/VS2022 BuildTools + Windows SDK.
@@ -418,10 +420,11 @@ eschars/
 ├── tsconfig.json
 ├── eschars-build.mjs                # esbuild bundler (TS -> JSX + ESM)
 ├── README.md
+├── deps/
+│   └── esabi/                       # pinned ESABI v0.3.0 git submodule (MIT)
 ├── native/
 │   ├── eschars.c                    # DLL source (4 ES* exports + 19 methods, incl. 4 trim)
 │   ├── eschars-cli.c                # console differential harness (#includes eschars.c)
-│   ├── SoSharedLibDefs.h            # canonical Adobe ABI header (keep its license notice intact)
 │   └── build.ps1                    # auto-discovers MSVC + SDK; -Name/-Cli switches
 ├── src/
 │   ├── index.ts                     # ES3-safe wrapper (the bundle entry point)
@@ -466,7 +469,8 @@ The `hexTableValid` wrapper function (validates the 512-char hex table for `tran
 ESCHARS stands on the shoulders of the ExtendScript community:
 
 - **[docsforadobe](https://github.com/docsforadobe) and the docsforadobe.dev community:** maintainers of the de-facto reference documentation for the ExtendScript runtime, including the `ExternalObject` interface this library is built on.
-- **Adobe's AdobeXMPScript** (decompiled): the canonical `ExternalObject` direct-interface precedent the DLL's ABI is modeled on; `native/SoSharedLibDefs.h` keeps Adobe's own sample-license header (vendored from `references/canonical-samples/`).
+- **[ESABI](https://github.com/thelabcorner/esabi):** the independently written, MIT-licensed declaration used by the native build; its provenance traces the public Adobe ExternalObject contract and sample repository without requiring ESCHARS to redistribute Adobe's sample header.
+- **Adobe's AdobeXMPScript** (decompiled): an ExternalObject direct-interface precedent used during the original runtime research.
 - **ThioJoe's ThioUtils:** the precedent that the direct interface works beyond Illustrator (see Compatibility).
 - **The ArcFitEso prototype** (`agent-skills/externalobject-extendscript/prototypes/arcfit-eso/`): the parent POC this library corrects (see Research corrections).
 
@@ -474,7 +478,7 @@ ESCHARS stands on the shoulders of the ExtendScript community:
 
 ## License
 
-GPL-3.0-or-later. `native/SoSharedLibDefs.h` keeps its own Adobe sample-license header (vendored from `references/canonical-samples/`); the rest is GPL-3.0-or-later like the eson-family repos.
+GPL-3.0-or-later. The pinned `deps/esabi` dependency is MIT-licensed under its own [LICENSE](deps/esabi/LICENSE).
 
 ---
 

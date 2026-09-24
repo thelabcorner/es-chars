@@ -180,7 +180,7 @@ export function load(opts?: any): any {
   if (cached) {
     return cached;
   }
-  if (typeof ExternalObject === "undefined" || typeof ExternalObject.search !== "function") {
+  if (typeof ExternalObject === "undefined" || typeof (ExternalObject as any).search !== "function") {
     throw makeError(ERR.UNSUPPORTED, describeError(ERR.UNSUPPORTED) + " (this runtime has no ExternalObject)");
   }
   var paths = candidatePaths(opts);

@@ -11,6 +11,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$esabiInclude = Join-Path $here "..\deps\esabi\include"
+if (-not (Test-Path (Join-Path $esabiInclude "esabi\esabi.h"))) {
+    throw "ESABI dependency missing. Run: git submodule update --init --recursive"
+}
 
 function Find-VsDevCmd {
     $candidates = @(
@@ -53,7 +57,7 @@ if ($Name) { $dllName = $Name }
 if ($Cli) {
     $src = Join-Path $here "eschars-cli.c"
     $out = Join-Path $outDir "ESChars-cli.exe"
-    & cl /nologo /O2 /W3 /Fe:"$out" "$src" /link /SUBSYSTEM:CONSOLE /OUT:"$out"
+    & cl /nologo /O2 /W3 /I"$esabiInclude" /Fe:"$out" "$src" /link /SUBSYSTEM:CONSOLE /OUT:"$out"
     if ($LASTEXITCODE -ne 0) { throw "cl failed with exit $LASTEXITCODE" }
     Write-Output ""
     Write-Output "Built: $out"
@@ -61,7 +65,7 @@ if ($Cli) {
 else {
     $src = Join-Path $here "eschars.c"
     $out = Join-Path $outDir $dllName
-    & cl /nologo /O2 /LD /W3 /Fe:"$out" "$src" /link /SUBSYSTEM:WINDOWS /OUT:"$out"
+    & cl /nologo /O2 /LD /W3 /I"$esabiInclude" /Fe:"$out" "$src" /link /SUBSYSTEM:WINDOWS /OUT:"$out"
     if ($LASTEXITCODE -ne 0) { throw "cl failed with exit $LASTEXITCODE" }
     Write-Output ""
     Write-Output "Built: $out"

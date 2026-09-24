@@ -1,6 +1,6 @@
 {
   "name": "eschars",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "ESCHARS - native charCodeAt/fromCharCode, bulk byte/unit operations, and modern trim edge scans for Adobe ExtendScript (ES3) via a live-verified ExternalObject DLL",
   "type": "module",
   "main": "dist/eschars-core.esm.mjs",
@@ -11,7 +11,10 @@
     "dist/ESCHARS.facade.jsx",
     "dist/ESCHARS.manifest.json",
     "dist/eschars-core.esm.mjs",
-    "native/SoSharedLibDefs.h",
+    "deps/esabi/include/esabi/esabi.h",
+    "deps/esabi/include/esabi/externalobject.h",
+    "deps/esabi/include/esabi/value.h",
+    "deps/esabi/LICENSE",
     "native/eschars.c",
     "native/eschars-cli.c",
     "native/build.ps1",
@@ -26,9 +29,11 @@
     "probes/eschars-probe.jsx",
     "probes/eschars-benchmark.jsx",
     "eschars-build.mjs",
+    "extendscript.estc.config.mjs",
     "README.md",
     "RELEASE_NOTES-v1.0.0.md",
     "RELEASE_NOTES-v1.1.0.md",
+    "RELEASE_NOTES-v1.1.2.md",
     "LICENSE",
     "package.json",
     "tsconfig.json"
@@ -42,7 +47,12 @@
     "typecheck": "npx tsc --noEmit -p .",
     "live-verify": "node tests/eschars-live-verify.mjs",
     "live-verify:fresh": "powershell -Command \"Get-Process Illustrator -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 3\" && node tests/eschars-live-verify.mjs",
-    "benchmark": "python \"../agent-skills/illustrator-com-automation-skill/comtool/ILLUSTRATOR_COM_TOOL.py\" eval --file probes/eschars-benchmark.jsx --launch"
+    "benchmark": "python \"../agent-skills/illustrator-com-automation-skill/comtool/ILLUSTRATOR_COM_TOOL.py\" eval --file probes/eschars-benchmark.jsx --launch",
+    "estc:static": "node ../extendscript-toolchain/bin/estc.mjs check dist/ESCHARS.jsx --no-target && node ../extendscript-toolchain/bin/estc.mjs check dist/ESCHARS.facade.jsx --no-target && node ../extendscript-toolchain/bin/estc.mjs check dist/ESCHARS.accel.jsx --no-target && node ../extendscript-toolchain/bin/estc.mjs check dist/ESCHARS.accel.min.jsx --no-target",
+    "estc:live-parse": "node ../extendscript-toolchain/bin/estc.mjs check dist/ESCHARS.jsx --no-target --live && node ../extendscript-toolchain/bin/estc.mjs check dist/ESCHARS.facade.jsx --no-target --live && node ../extendscript-toolchain/bin/estc.mjs check dist/ESCHARS.accel.jsx --no-target --live && node ../extendscript-toolchain/bin/estc.mjs check dist/ESCHARS.accel.min.jsx --no-target --live",
+    "verify": "npm run typecheck && npm run build:accel && npm run test && npm run estc:static",
+    "release:gate": "npm run verify && npm run estc:live-parse && npm run live-verify",
+    "prepublishOnly": "npm run release:gate"
   },
   "devDependencies": {
     "esbuild": "^0.28.1",

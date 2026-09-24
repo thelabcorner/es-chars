@@ -18,6 +18,9 @@ import { fileURLToPath } from 'node:url';
 var ROOT = dirname(fileURLToPath(import.meta.url));
 var DIST = join(ROOT, 'dist');
 var ENTRY = join(ROOT, 'src', 'index.ts');
+var ESTC = join(ROOT, '..', 'extendscript-toolchain', 'bin', 'estc.mjs');
+var ESB64_RUNTIME = join(ROOT, '..', 'esb64', 'dist', 'vendor-esb64-runtime.js');
+var ESB64_ACCEL = join(ROOT, '..', 'esb64', 'native', 'bin', 'ESB64Native.dll');
 
 function findEsbuild() {
   if (process.env.ESBUILD_PATH && existsSync(process.env.ESBUILD_PATH)) return process.env.ESBUILD_PATH;
@@ -47,12 +50,11 @@ function esmBuild(entry, outfile) {
   ], { stdio: 'inherit' });
 }
 
-function jsxBuild(entry, outfile) {
-  execFileSync(process.execPath, [
-    findEsbuild(), entry, '--bundle', '--outfile=' + outfile,
-    '--format=iife', '--global-name=ESCHARS', '--platform=neutral', '--target=es5',
-    '--log-level=warning'
-  ], { stdio: 'inherit' });
+function estcBuild(config) {
+  execFileSync(process.execPath, [ESTC, 'build', '--config', config], {
+    cwd: ROOT,
+    stdio: 'inherit'
+  });
 }
 
 mkdirSync(DIST, { recursive: true });
@@ -60,49 +62,10 @@ mkdirSync(DIST, { recursive: true });
 // 1. ESM core bundle (Node harnesses import this).
 esmBuild(ENTRY, join(DIST, 'eschars-core.esm.mjs'));
 
-// 2. JSX bundle with the ES3 shim prepended. ExtendScript (SpiderMonkey 2014)
-//    lacks Object.defineProperty and Function.prototype.bind, which esbuild's
-//    ES5 export helpers require.
+// 2. Canonical ExtendScript facade. ESTC owns ES3 normalization and keeps
+// esbuild helper compatibility bundle-local instead of mutating host globals.
 var jsx = join(DIST, 'ESCHARS.jsx');
-jsxBuild(ENTRY, jsx);
-
-var shim = [
-  'if (typeof Object.defineProperty !== "function") {',
-  '  Object.defineProperty = function (obj, prop, desc) {',
-  '    if (desc) {',
-  '      if (typeof desc.get === "function") {',
-  '        if (typeof obj.__defineGetter__ === "function") { obj.__defineGetter__(prop, desc.get); }',
-  '        else { obj[prop] = desc.get(); }',
-  '      } else if ("value" in desc) {',
-  '        obj[prop] = desc.value;',
-  '      }',
-  '    }',
-  '    return obj;',
-  '  };',
-  '  Object.getOwnPropertyDescriptor = function (obj, prop) {',
-  '    return { value: obj[prop], writable: true, enumerable: true, configurable: true };',
-  '  };',
-  '  Object.getOwnPropertyNames = function (obj) {',
-  '    var a = [], k;',
-  '    for (k in obj) { if (Object.prototype.hasOwnProperty.call(obj, k)) { a.push(k); } }',
-  '    return a;',
-  '  };',
-  '}',
-  'if (typeof Function.prototype.bind !== "function") {',
-  '  Function.prototype.bind = function (thisArg) {',
-  '    var fn = this;',
-  '    var args = Array.prototype.slice.call(arguments, 1);',
-  '    return function () {',
-  '      return fn.apply(thisArg, args.concat(Array.prototype.slice.call(arguments)));',
-  '    };',
-  '  };',
-  '}',
-  ''
-].join('\n');
-
-var finalJsx = shim + readFileSync(jsx, 'utf8');
-finalJsx = finalJsx.replace(/"use strict";?/g, '');
-writeFileSync(jsx, finalJsx);
+estcBuild('./extendscript.estc.config.mjs');
 
 // 3. Accelerated self-extracting bundle (ESCHARS.accel.jsx): ESPACK "1 + n".
 //    ESChars.dll is the payload; the current sibling ESPACK loader (v0.4.0)
@@ -161,7 +124,13 @@ function buildAccel() {
   var accelBundle = join(DIST, '.eschars-accel-bundle.jsx');
   var manifestOut = join(DIST, 'ESCHARS.manifest.json');
   execFileSync(process.execPath, [espackBuild, '--embed', dll, '--out', accelBundle,
-    '--name', 'eschars', '--manifest-out', manifestOut, '--quiet'], { stdio: 'inherit' });
+    '--name', 'eschars', '--manifest-out', manifestOut,
+    '--accel', ESB64_ACCEL, '--accel-version', '2', '--quiet'], {
+    stdio: 'inherit',
+    env: Object.assign({}, process.env, {
+      ESB64_RUNTIME_PATH: ESB64_RUNTIME
+    })
+  });
   var bundleText = readFileSync(accelBundle, 'utf8');
   var facadeText = readFileSync(join(DIST, 'ESCHARS.jsx'), 'utf8');
   var facadeOut = facadeText + '\n' + ACCELERATOR +
