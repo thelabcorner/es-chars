@@ -1,45 +1,25 @@
 #!/usr/bin/env node
 // ESChars live verification: runs the probe and the microbenchmark inside
-// the REAL Illustrator engine through ILLUSTRATOR_COM_TOOL.py, asserts the
+// the REAL Illustrator engine through COM Tool V2, asserts the
 // probe checks, and prints the benchmark table with medians.
 //
-// Requires: Illustrator (launched on demand with --launch), pywin32.
+// Requires: Illustrator (launched on demand with --launch) + COM Tool V2.
 //   npm run live-verify
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createLegacyComToolV2Runner } from '../../extendscript-toolchain/src/comtool-v2-compat.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const TOOL_CANDIDATES = [
-  process.env.ILLUSTRATOR_COM_TOOL || '',
-  join(ROOT, '..', 'agent-skills', 'illustrator-com-automation-skill', 'comtool', 'ILLUSTRATOR_COM_TOOL.py'),
-  join(ROOT, '..', 'agent-skills', 'illustrator-com-automation-skill', 'scripts', 'ILLUSTRATOR_COM_TOOL.py'),
-  'C:/Program Files/Adobe/Adobe Illustrator 2026/Presets/en_US/Scripts/agent-skills/illustrator-com-automation-skill/comtool/ILLUSTRATOR_COM_TOOL.py',
-  'C:/Program Files/Adobe/Adobe Illustrator 2026/Presets/en_US/Scripts/agent-skills/illustrator-com-automation-skill/scripts/ILLUSTRATOR_COM_TOOL.py'
-];
-const TOOL = TOOL_CANDIDATES.find((p) => p && existsSync(p));
 const PROBE = join(ROOT, 'probes', 'eschars-probe.jsx');
 const BENCH = join(ROOT, 'probes', 'eschars-benchmark.jsx');
 const ACCEL = join(ROOT, 'dist', 'ESCHARS.accel.jsx');
 const ACCEL_MIN = join(ROOT, 'dist', 'ESCHARS.accel.min.jsx');
-
-if (!TOOL) {
-  console.error('live-verify: COM tool not found. Tried: ' + TOOL_CANDIDATES.filter(Boolean).join(' | '));
-  process.exit(1);
-}
+const COM = createLegacyComToolV2Runner();
+process.on('exit', function () { try { COM.close(); } catch (ignore) {} });
 
 function runTool(args) {
-  const pyOut = execFileSync('python', [TOOL].concat(args), {
-    encoding: 'utf8', timeout: 600000
-  });
-  let env;
-  try {
-    env = JSON.parse(pyOut.trim());
-  } catch (e) {
-    console.error('live-verify: tool output not JSON: ' + pyOut.slice(0, 800));
-    process.exit(1);
-  }
+  const env = COM.run(args, { timeoutMs: 600000 });
   if (!env.ok) {
     console.error('live-verify: tool error: ' + JSON.stringify(env).slice(0, 1500));
     process.exit(1);
@@ -86,10 +66,9 @@ function verifyAcceleratedArtifact(label, file) {
 
 console.log('live-verify: running smoke probe in Illustrator...');
 const probeEnv = runEval(PROBE);
-// The probe returns JSON.stringify(out); the COM tool's wrapper returns
-// JSON-like strings raw, so env.result is the parsed report object. Fall back
-// to the checkpoint file the probe writes to %TEMP% (survives even if the
-// return path strips nested arrays).
+// The probe returns its plain object directly through COM Tool V2.
+// Fall back to the historical checkpoint file only for older/partial return
+// paths; checkpoint serialization itself is best-effort in ExtendScript.
 import { readFileSync } from 'node:fs';
 function readProbeReport() {
   if (probeEnv && typeof probeEnv === 'object' && Array.isArray(probeEnv.checks)) {

@@ -47,5 +47,5 @@
         out.ok = true;
     } catch (e) { out.ok = false; out.error = String(e.message); }
     ckpt();
-    return JSON.stringify(out);
+    return out;
 }());

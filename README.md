@@ -140,7 +140,7 @@ The library is **native-only with a hard failure if the DLL is missing** — the
 |---|---|---|---|
 | Files | `dist/ESCHARS.jsx` | `native/bin/ESChars.dll` | `dist/ESCHARS.accel.jsx` / `.min.jsx` |
 | Size | ~11 KB (wrapper) | ~122 KB (native) | ~221 KB / ~200 KB minified |
-| What it is | The ES3 wrapper facade + ES3 shims | The native ExternalObject DLL | Self-extracting ESPACK v0.4 bundle: loader + `ESChars.dll` payload + ESCHARS facade |
+| What it is | ESTC-built ES3 wrapper facade | The native ExternalObject DLL | Self-extracting ESPACK v0.4 bundle: loader + `ESChars.dll` payload + ESCHARS facade |
 | Required by | Your `.jsx` scripts | Resolved by the wrapper at runtime | One-file release path; no separate DLL placement |
 
 The DLL must be loadable from the host (placed beside the script, on `ExternalObject.searchFolders`, or loaded by absolute path — the wrapper tries all of these). The JSX bundle `evalFile`s the wrapper and calls `ESCHARS.load()`.
@@ -350,7 +350,7 @@ ESCHARS loads and executes a native DLL (`ESChars.dll`) via `ExternalObject` —
 
 | Target | Status |
 |---|---|
-| ExtendScript ES3 (SpiderMonkey 2014) — wrapper is ES3-clean (no `let`/`const`/arrows/`Promise`/`Map`); esbuild targets ES5 with an injected shim for `Object.defineProperty` and `Function.prototype.bind` | Bundled |
+| ExtendScript ES3 (SpiderMonkey 2014) — canonical JSX is emitted through ESTC with host-aware typing, ES3 normalization, and bundle-local helper compatibility; no host-global `Object.defineProperty` / `Function.prototype.bind` patching | Bundled |
 | Windows x64 (PE64 DLL; no macOS scope) | Native layer; the same DLL should work in Premiere/After Effects (ThioUtils precedent) but that is **unverified** here |
 | Illustrator 2026 (30.6.0) | Developed and tested; re-probe per host version |
 | Node.js (test harnesses) | Differential tests run without Illustrator (ESChars-cli.exe vs reference implementations) |
@@ -430,7 +430,7 @@ eschars/
 ├── LICENSE                          # GPL-3.0-or-later
 ├── package.json
 ├── tsconfig.json
-├── eschars-build.mjs                # esbuild bundler (TS -> JSX + ESM)
+├── eschars-build.mjs                # build orchestrator (Node ESM + ESTC-driven JSX/accel outputs)
 ├── README.md
 ├── deps/
 │   └── esabi/                       # pinned ESABI v0.3.0 git submodule (MIT)
