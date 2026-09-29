@@ -2,12 +2,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createLegacyComToolV2Runner } from '../../extendscript-toolchain/src/comtool-v2-compat.mjs';
+import { createComToolRunner } from '../../extendscript-toolchain/src/comtool-compat.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const PROBE = join(ROOT, 'probes', 'eschars-benchmark.jsx');
-const COM = createLegacyComToolV2Runner();
-process.on('exit', function () { try { COM.close(); } catch (ignore) {} });
+const COM = createComToolRunner();
 
 if (!existsSync(PROBE)) {
   console.error('benchmark: probe missing: ' + PROBE);
@@ -26,7 +25,7 @@ function checkpoint() {
 }
 
 console.log('benchmark: running bounded ESCHARS microbenchmark through COM Tool V2...');
-const envelope = COM.run(
+const envelope = await COM.run(
   ['eval', '--file', PROBE.replace(/\\/g, '/'), '--launch'],
   { timeoutMs: 600000 }
 );
@@ -78,3 +77,5 @@ for (const point of points) {
     );
   }
 }
+
+await COM.close();

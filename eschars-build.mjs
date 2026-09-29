@@ -19,8 +19,7 @@ var ROOT = dirname(fileURLToPath(import.meta.url));
 var DIST = join(ROOT, 'dist');
 var ENTRY = join(ROOT, 'src', 'index.ts');
 var ESTC = join(ROOT, '..', 'extendscript-toolchain', 'bin', 'estc.mjs');
-var ESB64_RUNTIME = join(ROOT, '..', 'esb64', 'dist', 'vendor-esb64-runtime.js');
-var ESB64_ACCEL = join(ROOT, '..', 'esb64', 'native', 'bin', 'ESB64Native.dll');
+var ESB64_MANIFEST = join(ROOT, '..', 'esb64', 'dist', 'ESB64.manifest.json');
 
 function findEsbuild() {
   if (process.env.ESBUILD_PATH && existsSync(process.env.ESBUILD_PATH)) return process.env.ESBUILD_PATH;
@@ -57,6 +56,14 @@ function estcBuild(config) {
   });
 }
 
+function gitHead() {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
+  } catch (ignore) {
+    return '';
+  }
+}
+
 mkdirSync(DIST, { recursive: true });
 
 // 1. ESM core bundle (Node harnesses import this).
@@ -67,11 +74,10 @@ esmBuild(ENTRY, join(DIST, 'eschars-core.esm.mjs'));
 var jsx = join(DIST, 'ESCHARS.jsx');
 estcBuild('./extendscript.estc.config.mjs');
 
-// 3. Accelerated self-extracting bundle (ESCHARS.accel.jsx): ESPACK "1 + n".
-//    ESChars.dll is the payload; the current sibling ESPACK loader (v0.4.0)
-//    embeds/discovers the shared ESB64Native accelerator and emits the v1
-//    merge manifest. The adapter loads by PAYLOAD NAME ("ESChars"), never by
-//    index, because merged bundles have unstable payload indexes.
+// 3. Accelerated self-extracting bundle (ESCHARS.accel.jsx): ESPACK v2.
+//    ESB64 and ESCHARS are flattened through one persistent ESPAK control
+//    plane. ESChars.dll is a native capability payload and ESCHARS borrows
+//    ESPACK's ExternalObject rather than opening/unloading a second owner.
 var ACCELERATOR = [
   '',
   '(function () {',
@@ -84,14 +90,14 @@ var ACCELERATOR = [
   '  if (typeof ESCHARS !== "object" || !ESCHARS || typeof ESCHARS.load !== "function") return;',
   '  var cached = null;',
   '  function useEspack() {',
-  '    // Merge architecture v1: load by NAME, never load(0).',
+  '    // Composition architecture v2: load by NAME, never load(0).',
   '    var l = ESPAK.load("ESChars");',
-  '    if (!l || !l.ok || !l.path) {',
+  '    if (!l || !l.ok || !l.path || !l.lib) {',
   '      cached = { ok: false, reason: (l && l.error) || "ESPAK load failed" };',
   '      return cached;',
   '    }',
   '    try {',
-  '      var lib = ESCHARS.load({ path: l.path });',
+  '      var lib = ESCHARS.load({ lib: l.lib, path: l.path, owned: false });',
   '      cached = { ok: !!lib, mode: l.mode, path: l.path };',
   '    } catch (e) {',
   '      cached = { ok: false, reason: String(e), path: l.path };',
@@ -110,10 +116,13 @@ var ACCELERATOR = [
   ''
 ].join('\n');
 
-function buildAccel() {
+async function buildAccel() {
   var espackBuild = join(ROOT, '..', 'espack', 'espack-build.mjs');
+  var espackMerge = join(ROOT, '..', 'espack', 'espack-merge.mjs');
+  var espackLibraries = join(ROOT, '..', 'espack', 'espack-libraries.mjs');
   var dll = join(ROOT, 'native', 'bin', 'ESChars.dll');
-  if (!existsSync(espackBuild)) {
+  var manifestOut = join(DIST, 'ESCHARS.manifest.json');
+  if (!existsSync(espackBuild) || !existsSync(espackMerge) || !existsSync(espackLibraries)) {
     console.log('[eschars-build] accel skipped: espack repo not found at ' + join(ROOT, '..', 'espack'));
     return;
   }
@@ -121,23 +130,45 @@ function buildAccel() {
     console.log('[eschars-build] accel skipped: ' + dll + ' missing (run npm run build:native)');
     return;
   }
-  var accelBundle = join(DIST, '.eschars-accel-bundle.jsx');
-  var manifestOut = join(DIST, 'ESCHARS.manifest.json');
-  execFileSync(process.execPath, [espackBuild, '--embed', dll, '--out', accelBundle,
-    '--name', 'eschars', '--manifest-out', manifestOut,
-    '--accel', ESB64_ACCEL, '--accel-version', '2', '--quiet'], {
-    stdio: 'inherit',
-    env: Object.assign({}, process.env, {
-      ESB64_RUNTIME_PATH: ESB64_RUNTIME
-    })
-  });
-  var bundleText = readFileSync(accelBundle, 'utf8');
+  if (!existsSync(ESB64_MANIFEST)) {
+    console.log('[eschars-build] accel skipped: ESB64 v2 manifest missing (build ../esb64 first)');
+    return;
+  }
+  var packageInfo = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  var esb64Package = JSON.parse(readFileSync(join(ROOT, '..', 'esb64', 'package.json'), 'utf8'));
+  var api = await import(new URL('../espack/espack-build.mjs', import.meta.url).href);
+  var mergeApi = await import(new URL('../espack/espack-merge.mjs', import.meta.url).href);
+  var libraries = await import(new URL('../espack/espack-libraries.mjs', import.meta.url).href);
+  var payload = readFileSync(dll);
   var facadeText = readFileSync(join(DIST, 'ESCHARS.jsx'), 'utf8');
   var facadeOut = facadeText + '\n' + ACCELERATOR +
-    '// ESCHARS.facade.jsx - loader-free facade + espack adapter (composer appends to a merged bundle; requires ESPAK on $.global)\n';
+    '// ESCHARS.facade.jsx - ESPACK v2 activation adapter\n';
   writeFileSync(join(DIST, 'ESCHARS.facade.jsx'), facadeOut);
-  var accelOut = bundleText + '\n' + facadeText + '\n' + ACCELERATOR +
-    '// ESCHARS.accel.jsx - self-extracting single-file bundle (espack v0.4 + ESCHARS + native DLL gate)\n';
+  var library = libraries.libraryFromFile({
+    id: 'eschars', version: packageInfo.version, global: 'ESCHARS',
+    path: join(DIST, 'ESCHARS.facade.jsx'),
+    requires: [{ id: 'esb64', range: '^' + esb64Package.version }],
+    contract: [
+      { name: 'load', type: 'function' }, { name: 'isLoaded', type: 'function' },
+      { name: 'unload', type: 'function' }, { name: 'crc32', type: 'function' }
+    ],
+    provenance: { package: packageInfo.name,
+      repository: packageInfo.repository && packageInfo.repository.url,
+      commit: gitHead(), artifact: 'dist/ESCHARS.facade.jsx' }
+  });
+  var ownManifest = api.makeManifest({
+    bundleName: 'eschars', cacheDir: '',
+    payloads: [{ name: 'ESChars', version: '1', len: payload.length,
+      b64: payload.toString('base64'), fileName: 'ESChars_v1.dll' }],
+    libraries: [library], entries: [{ id: 'eschars', range: '=' + packageInfo.version }],
+    capabilities: [{ id: 'eschars.native', provider: 'eschars', mode: 'required',
+      payloads: ['ESChars'], accel: null }]
+  });
+  var composed = mergeApi.merge({ manifests: [ESB64_MANIFEST, ownManifest],
+    out: join(DIST, 'ESCHARS.accel.jsx'), manifestOut: manifestOut,
+    name: 'eschars', entries: [{ id: 'eschars', range: '=' + packageInfo.version }], deferB64: true });
+  var accelOut = composed.text +
+    '// ESCHARS.accel.jsx - ESPACK v2 flattened ESB64 -> ESCHARS composition; one loader/control plane\n';
   writeFileSync(join(DIST, 'ESCHARS.accel.jsx'), accelOut);
   console.log('[eschars-build] wrote ' + join(DIST, 'ESCHARS.accel.jsx') + ' (' + accelOut.length + ' bytes)');
   console.log('[eschars-build] wrote ' + manifestOut + ' and ' + join(DIST, 'ESCHARS.facade.jsx'));
@@ -168,7 +199,7 @@ function minifyAccel(accelOut) {
 }
 
 if (process.argv.includes('--accel')) {
-  buildAccel();
+  await buildAccel();
 }
 
 console.log('[eschars-build] wrote ' + join(DIST, 'ESCHARS.jsx') + ' and ' + join(DIST, 'eschars-core.esm.mjs'));

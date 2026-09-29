@@ -58,6 +58,7 @@ export var LIVE_API = [
 ];
 
 var cached: any = null;
+var cachedOwned: boolean = false;
 
 function makeError(code: number, message: string): Error {
   var e = new Error(message);
@@ -177,6 +178,28 @@ function hasCriticalBindings(report: any[]): boolean {
  * Returns the ExternalObject instance. Throws ERR.NOT_FOUND /
  * ERR.UNSUPPORTED / ERR.BINDING on failure (native-only: no fallback). */
 export function load(opts?: any): any {
+  if (opts && opts.lib) {
+    if (cached === opts.lib) {
+      return cached;
+    }
+    if (cached && cachedOwned) {
+      try { cached.unload(); } catch (ignorePreviousUnload) {}
+    }
+    cached = null;
+    cachedOwned = false;
+    var injected = opts.lib;
+    if (!injected || Number(injected.version) !== 1) {
+      throw makeError(ERR.BINDING, "injected ESChars library has the wrong version");
+    }
+    var injectedReport = verifyBindings(injected);
+    if (!hasCriticalBindings(injectedReport)) {
+      throw makeError(ERR.BINDING,
+        "injected ESChars library is missing required bindings: " + bindingReportText(injectedReport));
+    }
+    cached = injected;
+    cachedOwned = opts.owned === true;
+    return cached;
+  }
   if (cached) {
     return cached;
   }
@@ -200,6 +223,7 @@ export function load(opts?: any): any {
           break;
         }
         cached = lib;
+        cachedOwned = true;
         return lib;
       }
     } catch (e) {
@@ -232,12 +256,15 @@ export function isLoaded(): boolean {
 
 export function unload(): void {
   if (cached) {
-    try {
-      cached.unload();
-    } catch (ignore) {
-      /* already terminated */
+    if (cachedOwned) {
+      try {
+        cached.unload();
+      } catch (ignore) {
+        /* already terminated */
+      }
     }
     cached = null;
+    cachedOwned = false;
   }
 }
 
