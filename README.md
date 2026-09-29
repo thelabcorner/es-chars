@@ -11,7 +11,7 @@
 [![Boundary: ~7 us/KB](https://img.shields.io/badge/boundary~%7C%7C~7%20us%2FKB-orange)](#whole-workload-native-transforms)
 [![Adobe: Creative Suite](https://img.shields.io/badge/Adobe%20-Creative%20Suite-red?logo=adobe&logoColor=white)](https://extendscript.docsforadobe.dev/)
 [![Engine: ES3](https://img.shields.io/badge/ExtendScript-ES3-green)](#compatibility)
-[![Size](https://img.shields.io/badge/wrapper-~11%20KB-orange)](#which-build-should-i-use)
+[![Size](https://img.shields.io/badge/wrapper-7.3%20KB-orange)](#which-build-should-i-use)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL%203.0--or--later-blue)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 </div>
@@ -160,8 +160,8 @@ The library is **native-only with a hard failure if the DLL is missing** — the
 | | **JSX bundle** | **DLL** | **ESPACK accel bundle** |
 |---|---|---|---|
 | Files | `dist/ESCHARS.jsx` | `native/bin/ESChars.dll` | `dist/ESCHARS.accel.jsx` / `.min.jsx` |
-| Size | ~11 KB (wrapper) | ~122 KB (native) | ~221 KB / ~200 KB minified |
-| What it is | ESTC-built ES3 wrapper facade | The native ExternalObject DLL | Self-extracting ESPACK v0.4 bundle: loader + `ESChars.dll` payload + ESCHARS facade |
+| Size | 7,337 B | 142,848 B | 267,774 B / 240,144 B minified |
+| What it is | ESTC-built ES3 wrapper facade | The native ExternalObject DLL | Self-extracting ESPACK v0.5 manifest-v2 bundle: loader + `ESChars.dll` payload + ESCHARS facade |
 | Required by | Your `.jsx` scripts | Resolved by the wrapper at runtime | One-file release path; no separate DLL placement |
 
 The DLL must be loadable from the host (placed beside the script, on `ExternalObject.searchFolders`, or loaded by absolute path — the wrapper tries all of these). The JSX bundle `evalFile`s the wrapper and calls `ESCHARS.load()`.
@@ -176,9 +176,9 @@ The DLL must be loadable from the host (placed beside the script, on `ExternalOb
 
 **All production bundles ship as GitHub release assets — this repo holds sources. Grab the runnable builds from the [Releases page](https://github.com/thelabcorner/es-chars/releases).**
 
-[![Release: v1.1.2](https://img.shields.io/badge/release-v1.1.2-blue)](https://github.com/thelabcorner/es-chars/releases/tag/v1.1.2)
-[![Released: 2026-09-23](https://img.shields.io/badge/released-2026--09--23-lightgrey)](https://github.com/thelabcorner/es-chars/releases/tag/v1.1.2)
-[![Downloads](https://img.shields.io/github/downloads/thelabcorner/es-chars/total?color=blueviolet)](https://github.com/thelabcorner/es-chars/releases)
+[![Latest stable](https://img.shields.io/github/v/release/thelabcorner/es-chars?label=Latest%20stable)](https://github.com/thelabcorner/es-chars/releases/latest)
+[![Release date](https://img.shields.io/github/release-date/thelabcorner/es-chars?label=Released)](https://github.com/thelabcorner/es-chars/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/thelabcorner/es-chars/total?label=Downloads)](https://github.com/thelabcorner/es-chars/releases)
 
 </div>
 
@@ -190,11 +190,11 @@ The DLL must be loadable from the host (placed beside the script, on `ExternalOb
 
 | You are... | Take this release | And this asset |
 |---|---|---|
-| Dropping one file into the Scripts folder with zero install steps (self-extracting `ESChars.dll` included) | v1.1.0 | `ESCHARS.accel.min.jsx` |
-| Auditing or debugging the self-extracting bundle before minification | v1.1.0 | `ESCHARS.accel.jsx` |
-| Loading the native DLL from your own `ExternalObject` setup | v1.1.0 | `ESCHARS.jsx` + `ESChars.dll` |
-| Composing several ESPACK consumers into one merged bundle | main | `npm run build:accel` → `ESCHARS.manifest.json` + `ESCHARS.facade.jsx` (composer inputs, not release assets) |
-| Running Node-side tests or reading the core facade | v1.1.0 | `eschars-core.esm.mjs` |
+| Dropping one file into the Scripts folder with zero install steps (self-extracting `ESChars.dll` included) | Latest stable | `ESCHARS.accel.min.jsx` |
+| Auditing or debugging the self-extracting bundle before minification | Latest stable | `ESCHARS.accel.jsx` |
+| Loading the native DLL from your own `ExternalObject` setup | Latest stable | `ESCHARS.jsx` + `ESChars.dll` |
+| Composing several ESPACK consumers into one merged bundle | Latest stable | `ESCHARS.manifest.json` + `ESCHARS.facade.jsx` |
+| Running Node-side tests or reading the core facade | Latest stable | `eschars-core.esm.mjs` |
 | Building from source / reading the implementation | main | the repo |
 
 > **Rule of thumb: start with the latest stable tag.** Every release asset is
@@ -400,22 +400,24 @@ git submodule update --init --recursive  # pins ESABI v0.3.0
 npm install                          # esbuild + typescript
 npm run build                        # bundles src/index.ts -> dist/ESCHARS.jsx (+ eschars-core.esm.mjs)
 npm run build:native                 # compiles native/eschars.c -> native/bin/ESChars.dll
-npm run build:accel                  # dist/ESCHARS.accel.jsx + .min.jsx + manifest/facade (ESPACK v0.4)
+npm run build:accel                  # dist/ESCHARS.accel.jsx + .min.jsx + manifest/facade (ESPACK v0.5)
 npm test                             # Node differential tests (core + byte transforms + trim; no Illustrator)
 npm run test:trim                    # trimModern* differential only
 npm run typecheck                    # tsc --noEmit (strict)
 npm run live-verify                  # smoke + benchmark inside Illustrator via COM
 ```
 
-**Merge architecture (ESPACK v0.4.0).** `build:accel` also emits composition
+**Merge architecture (ESPACK v0.5.0 / manifest v2).** `build:accel` also emits composition
 artifacts for hosts that bundle multiple ESPACK consumers in one file:
-`dist/ESCHARS.manifest.json` (schema v1, byte-identical to
-`espack-build --manifest-out`) and `dist/ESCHARS.facade.jsx` (loader-free facade
+`dist/ESCHARS.manifest.json` (schema v2, byte-provenanced against the
+`ESCHARS.facade.jsx` source and native payloads) and
+`dist/ESCHARS.facade.jsx` (loader-free facade
 + adapter, requires `ESPAK` on `$.global`). A composer merges manifests with
 `espack-merge.mjs` into ONE loader and appends the facades. The adapter loads
 the payload **by name** (`ESPAK.load("ESChars")`) — index 0 is not a stable API
 under a merged bundle. The standalone `ESCHARS.accel.jsx` is unchanged in
-composition and remains the one-file release asset.
+composition and remains the one-file release asset; the manifest and facade are
+also release assets for shared-runtime composition.
 
 ### Native build details
 
